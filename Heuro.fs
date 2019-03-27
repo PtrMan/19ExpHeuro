@@ -708,15 +708,95 @@ let fillDefaultTasks =
 
 
 
+// selects a task and processes it
+let selectTaskAndProcess =
+  // loop consists out of   https://www.quora.com/Has-Douglas-Lenats-EURISKO-research-ever-been-reproduced
+  // * Find something to do (pull a high-value task off an agenda)
+  //   * Go do it
+  //   * Study what you did
+
+  // select task with highest prirority (which is the first task because it is sorted)
+  let currentTask = agenda.tasks.[0];
+
+  // work on current task
+  // IMPL< we need to iterate over all concepts >
+  // MAYBE OPTIMIZATION< efficiency may get improved by caching it like described in [Lenat phd dissertation pdf page around 39] - but why should we do it when we are working with just a few tasks??? >
+  for iConcept in concepts do
+    printfn "[d ] iterate over concept=%s for search for matching heuristics" (retConceptName iConcept)
+
+    let heuristicInvocationCtx = new HeuristicInvocationCtx(currentTask, iConcept);
+    
+    // IMPL< we need to iterate over all "facets"(slots) to find the heuristics (and apply them)
+    for iItem in iConcept.slots do
+      printfn "[d5]    has item name=%s" iItem.name.[0];
+
+      let iHeuristicConceptNames = iItem.heuristicNames; // IMPL< we need to retrieve the names of the heuristics >
+      
+      // fetch heuristics as described in [Lenat phd dissertation] [AM CASE pdf page 5]
+      for iHeuristicConceptName in iHeuristicConceptNames do
+        // retrieve heuristic concept
+
+        
+        printfn "[d ] found iHeuristicConceptName=%s of concept=%s" iHeuristicConceptName (retConceptName iConcept);
+        
+        let heuristicConceptOpt: Concept option = (retConceptByName iHeuristicConceptName)
+        let mutable heuristicName = iHeuristicConceptName;
+        
+        let heuristicMaybe: Heuristic2 option = (retHeuristicByName heuristicName);
+
+        match heuristicMaybe with
+        | Some heuristic -> 
+          // iterate over applied concepts
+          // TODO< keep track of resource quota's >
+          for iAppliedConcept in concepts do
+            let invocationCtx = new HeuristicInvocationCtx(currentTask, iAppliedConcept);
+            let heuristicFires = (checkLeftSide heuristic invocationCtx)
+
+            if heuristicFires then
+              printfn "[d5] heuristicConceptName=%s heuristic=%s FIRING!" iHeuristicConceptName heuristicName;
+              
+              let heuristicActionsNamesOpt: string[] option =
+                match heuristicConceptOpt with
+                | Some heuristicConcept ->
+                  Some (conceptRetSlotOrNull heuristicConcept [|"heuristicActions"|] |> convStrVariantArrToStrArr);
+                | None ->
+                  None
+
+              match heuristicActionsNamesOpt with
+              | Some heuristicActionsNames ->
+                printfn "[d5] found heuristicActions of heuristic name=%s" heuristicName;
+
+                // execute body of heuristic
+                for iHeuristicActionName in heuristicActionsNames do
+                  let foundHeuristicAction, heuristicAction = heuristicActions.TryGetValue iHeuristicActionName;
+
+                  if foundHeuristicAction then
+                    
+                    printfn "[d6]   invoke heuristicAction name=%s for concept=%s" iHeuristicActionName (retConceptName iAppliedConcept);
+
+                    (heuristicAction invocationCtx);
+                  else
+                    printfn "[w6]   could not find heuristic action name=%s" iHeuristicActionName;
+
+              | None ->
+                printfn "[w ] couldn't retrieve heuristicActions of heuristic name=%s" heuristicName;
+
+          ()
+
+        | None ->
+          printfn "[w ] heuristicConcept=%s pointed at heuristic=%s which was not found!" iHeuristicConceptName heuristicName;
+
+        
+        ()
+
+  // we need to remove the task
+  // see  [Lenat phd dissertation pdf page 39]
+  agenda.tasks <- Array.sub agenda.tasks 1 ((Array.length agenda.tasks) - 1);
+
+  // insert new tasks
+  // TODO< >
 
 // main loop
-
-// loop consists out of   https://www.quora.com/Has-Douglas-Lenats-EURISKO-research-ever-been-reproduced
-// * Find something to do (pull a high-value task off an agenda)
-//   * Go do it
-//   * Study what you did
-// * Loop
-
 let mutable cycleCnt = 0L;
 let mutable forceTermination = false;
 while cycleCnt < 10L && not forceTermination do
@@ -728,87 +808,7 @@ while cycleCnt < 10L && not forceTermination do
     forceTermination <- true;
 
   if (Array.length agenda.tasks) > 0 then
-
-    // select task with highest prirority (which is the first task because it is sorted)
-    let currentTask = agenda.tasks.[0];
-
-    // work on current task
-    // IMPL< we need to iterate over all concepts >
-    // MAYBE OPTIMIZATION< efficiency may get improved by caching it like described in [Lenat phd dissertation pdf page around 39] - but why should we do it when we are working with just a few tasks??? >
-    for iConcept in concepts do
-      printfn "[d ] iterate over concept=%s for search for matching heuristics" (retConceptName iConcept)
-
-      let heuristicInvocationCtx = new HeuristicInvocationCtx(currentTask, iConcept);
-      
-      // IMPL< we need to iterate over all "facets"(slots) to find the heuristics (and apply them)
-      for iItem in iConcept.slots do
-        printfn "[d5]    has item name=%s" iItem.name.[0];
-
-        let iHeuristicConceptNames = iItem.heuristicNames; // IMPL< we need to retrieve the names of the heuristics >
-        
-        // fetch heuristics as described in [Lenat phd dissertation] [AM CASE pdf page 5]
-        for iHeuristicConceptName in iHeuristicConceptNames do
-          // retrieve heuristic concept
-
-          
-          printfn "[d ] found iHeuristicConceptName=%s of concept=%s" iHeuristicConceptName (retConceptName iConcept);
-          
-          let heuristicConceptOpt: Concept option = (retConceptByName iHeuristicConceptName)
-          let mutable heuristicName = iHeuristicConceptName;
-          
-          let heuristicMaybe: Heuristic2 option = (retHeuristicByName heuristicName);
-
-          match heuristicMaybe with
-            | Some heuristic -> 
-                // iterate over applied concepts
-                // TODO< keep track of resource quota's >
-                for iAppliedConcept in concepts do
-                  let invocationCtx = new HeuristicInvocationCtx(currentTask, iAppliedConcept);
-                  let heuristicFires = (checkLeftSide heuristic invocationCtx)
-
-                  if heuristicFires then
-                    printfn "[d5] heuristicConceptName=%s heuristic=%s FIRING!" iHeuristicConceptName heuristicName;
-                    
-                    let heuristicActionsNamesOpt: string[] option =
-                      match heuristicConceptOpt with
-                      | Some heuristicConcept ->
-                        Some (conceptRetSlotOrNull heuristicConcept [|"heuristicActions"|] |> convStrVariantArrToStrArr);
-                      | None ->
-                        None
-
-                    match heuristicActionsNamesOpt with
-                      | Some heuristicActionsNames ->
-                        printfn "[d5] found heuristicActions of heuristic name=%s" heuristicName;
-
-                        // execute body of heuristic
-                        for iHeuristicActionName in heuristicActionsNames do
-                          let foundHeuristicAction, heuristicAction = heuristicActions.TryGetValue iHeuristicActionName;
-
-                          if foundHeuristicAction then
-                            
-                            printfn "[d6]   invoke heuristicAction name=%s for concept=%s" iHeuristicActionName (retConceptName iAppliedConcept);
-
-                            (heuristicAction invocationCtx);
-                          else
-                            printfn "[w6]   could not find heuristic action name=%s" iHeuristicActionName;
-
-                      | None ->
-                        printfn "[w ] couldn't retrieve heuristicActions of heuristic name=%s" heuristicName;
-
-                ()
-
-            | None ->
-              printfn "[w ] heuristicConcept=%s pointed at heuristic=%s which was not found!" iHeuristicConceptName heuristicName
-
-          
-          ()
-
-    // we need to remove the task
-    // see  [Lenat phd dissertation pdf page 39]
-    agenda.tasks <- Array.sub agenda.tasks 1 ((Array.length agenda.tasks) - 1);
-  
-    // insert new tasks
-    // TODO< >
+    (selectTaskAndProcess)
 
   cycleCnt <- cycleCnt + 1L;
 
