@@ -15,7 +15,9 @@
 // [III]                       "Eurisko: A program that learns new heuristics and domain concepts: The nature of Heuristics III: Program design and results"
 
 
+open System
 open System.Collections.Generic
+
 
 
 
@@ -38,11 +40,15 @@ let calcUsefulness (reasonRating:float[]) (act:float) (facet:float) (concept:flo
 
 
 type Variant = struct
-  val type_: int // datatype : 0 : null, 1: string, 2: array, 3: long, 4: float
+  val type_: int // datatype : 0 : null, 1: string, 2: array, 3: long, 4: float, 5: function
   val mutable valInt: int64
   val mutable valString: string
   val mutable valFloat: float
   val mutable valArr: Variant[]
+  
+  // used to pass functions around and call them dynamically with any arguments
+  // commented because not used
+  //val mutable valFn: (Variant[]->Variant) option
   
   new (type__) =
       {type_ = type__; valInt=0L; valString=""; valFloat=0.0; valArr=[||]}
@@ -706,6 +712,17 @@ let fillDefaultTasks =
 
 
 
+// -1 to disable debug messages
+let mutable debugVerbosity = 5;
+
+
+let debug (verbosity:int) (msg:string) =
+  let levelAsString = match verbosity with
+  | 0 -> " "
+  | _ -> (string)verbosity
+  
+  if verbosity <= debugVerbosity then
+    printfn "[d%s] %s" levelAsString msg
 
 
 // selects a task and processes it
@@ -722,13 +739,13 @@ let selectTaskAndProcess =
   // IMPL< we need to iterate over all concepts >
   // MAYBE OPTIMIZATION< efficiency may get improved by caching it like described in [Lenat phd dissertation pdf page around 39] - but why should we do it when we are working with just a few tasks??? >
   for iConcept in concepts do
-    printfn "[d ] iterate over concept=%s for search for matching heuristics" (retConceptName iConcept)
+    debug 0 (String.Format("iterate over concept={0} for search for matching heuristics", retConceptName iConcept));
 
     let heuristicInvocationCtx = new HeuristicInvocationCtx(currentTask, iConcept);
     
     // IMPL< we need to iterate over all "facets"(slots) to find the heuristics (and apply them)
     for iItem in iConcept.slots do
-      printfn "[d5]    has item name=%s" iItem.name.[0];
+      debug 7 (String.Format("   has item name={0}", iItem.name.[0]));
 
       let iHeuristicConceptNames = iItem.heuristicNames; // IMPL< we need to retrieve the names of the heuristics >
       
