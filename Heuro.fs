@@ -66,6 +66,22 @@ let makeFloat (value: float) =
   res.valFloat <- value;
   res
 
+let makeArr (content: Variant[]) =
+  let mutable res = new Variant(2);
+  res.valArr <- content;
+  res
+
+// convert string variant array to native string array
+let convStrVariantArrToStrArr (v:Variant): string[] =
+  if v.type_ = 2 then // IMPL< check for array >
+    let mutable arr:string[] = [||]
+    for i in v.valArr do
+      if i.type_ = 1 then // IMPL< check for string >
+        arr <- Array.append arr [|i.valString|];
+    arr
+  else
+    [||]
+
 
 
 
@@ -114,7 +130,7 @@ let slotPut (slots: Slot[]) (name: string[]) (subject: string) (value:Variant): 
        slots.[idx].value <- fun e -> value;
        true
     | None   ->
-       printfn "[w] slotPut failed! name=%s" (convPath name)
+       printfn "[w ] slotPut failed! name=%s" (convPath name)
        false
 
 let slotHas (slots: Slot[]) (name: string[]) =
@@ -156,9 +172,16 @@ let retConceptName (concept:Concept) =
   // TODO< check for correct type (must be string)
   (slotGet concept.slots [|"name"|] "").valString
 
+// return the value of the slot or a invariant null
+let conceptRetSlotOrNull (concept:Concept) (slotAdress:string[]): Variant = 
+  if slotHas concept.slots slotAdress then
+    slotGet concept.slots slotAdress ""
+  else
+    makeNull // IMPL< return null as default >
 
 
 // reason for a task
+
 type Reason = struct
   // TODO< add fields >
   
@@ -177,6 +200,9 @@ type Task = struct
   // tasks can have reasons
   // see [Lenat phd dissertation page pdf 25]
   // see [Lenat phd dissertation page pdf 41]
+  //
+  // * reasons are added by heuristics [Lenat phd dissertation page pdf 163]
+  //   * adding of a reason forces the recomputation of the priority of the task [Lenat phd dissertation page pdf 163]
   val mutable reasons: Reason[]
 
 
@@ -318,9 +344,9 @@ type Heuristic2 = struct
   val leftSide: (HeuristicInvocationCtx->bool)[] // preconditions
                                                  // first is special in AM but we abstracted the "specialness" away
   
-  val actions: (HeuristicInvocationCtx->unit)[]
+  //val actions: (HeuristicInvocationCtx->unit)[]
 
-  new (name_, leftSide_, actions_) = {name=name_;leftSide=leftSide_;actions=actions_;}
+  new (name_, leftSide_) = {name=name_;leftSide=leftSide_;}
 end
 
 
@@ -583,6 +609,11 @@ let fillCustomConcepts =
   |];
   concepts <- Array.append concepts [|new Concept(slots)|];
 
+
+// we need a way to store the (typed) bodies used by the heuristics
+let heuristicActions :Dictionary<string, HeuristicInvocationCtx->unit> = new Dictionary<string, HeuristicInvocationCtx->unit>()
+
+
 let fillLenatHeuristics =
   // if there are no examples for concept C filled in so far,
   // THEN 
@@ -606,13 +637,15 @@ let fillLenatHeuristics =
 
     let reason_hr = "no examples of "+nameOfConcept+" filled in so far" // human readable reason
 
-    printfn "[d] heuristicSuggestTasks() called for concept=%s" nameOfConcept
+    printfn "[d ] heuristicSuggestTasks() called for concept=%s" nameOfConcept
     // TODO< fully implement this heuristic >
   
+  heuristicActions.Add("heuristicSuggestTasksAction", heuristicSuggestTasksAction); // IMPL< register action >
+
   let heuristicName = ("H_"+"suggestTasks");
 
   heuristics2 <- Array.append heuristics2
-    [|new Heuristic2(heuristicName, [|heuristicSuggestTaskLeftSide|], [|heuristicSuggestTasksAction|])|]; // IMPL< register >
+    [|new Heuristic2(heuristicName, [|heuristicSuggestTaskLeftSide|])|]; // IMPL< register >
   
   
   // create and add heuristic concept
@@ -620,6 +653,7 @@ let fillLenatHeuristics =
     [|
     new Slot([|"name"|], fun a -> makeString heuristicName);
     new Slot([|"usefulness"|], fun a -> (makeFloat 0.75));
+    new Slot([|"heuristicActions"|], fun a -> (makeArr [|makeString "heuristicSuggestTasksAction"|])); // IMPL< register action for heuristic >
     |];
   concepts <- Array.append concepts [|new Concept(slots)|];
   
@@ -669,6 +703,10 @@ let fillDefaultTasks =
 (fillDefaultTasks)
 
 
+
+
+
+
 // main loop
 
 // loop consists out of   https://www.quora.com/Has-Douglas-Lenats-EURISKO-research-ever-been-reproduced
@@ -711,10 +749,10 @@ while cycleCnt < 10L && not forceTermination do
           // retrieve heuristic concept
 
           
-          printfn "[d] found iHeuristicConceptName=%s of concept=%s" iHeuristicConceptName (retConceptName iConcept);
+          printfn "[d ] found iHeuristicConceptName=%s of concept=%s" iHeuristicConceptName (retConceptName iConcept);
           
           // TODO< retrieve heuristic name >
-          let heuristicConcept = (retConceptByName iHeuristicConceptName)
+          let heuristicConceptOpt: Concept option = (retConceptByName iHeuristicConceptName)
           let mutable heuristicName = iHeuristicConceptName;
           // commented because it was a hack for testing
           //match heuristicConcept with
@@ -727,8 +765,7 @@ while cycleCnt < 10L && not forceTermination do
           //    
           //    ()
 
-          // TODO< add type >
-          let heuristicMaybe = (retHeuristicByName heuristicName);
+          let heuristicMaybe: Heuristic2 option = (retHeuristicByName heuristicName);
 
           match heuristicMaybe with
             | Some heuristic -> 
@@ -736,14 +773,37 @@ while cycleCnt < 10L && not forceTermination do
               let heuristicFires = (checkLeftSide heuristic invocationCtx)
 
               if heuristicFires then
-                printfn "[d] heuristicConceptName=%s heuristic=%s FIRING!" iHeuristicConceptName heuristicName;
+                printfn "[d5] heuristicConceptName=%s heuristic=%s FIRING!" iHeuristicConceptName heuristicName;
+                
+                let heuristicActionsNamesOpt: string[] option =
+                  match heuristicConceptOpt with
+                  | Some heuristicConcept ->
+                    Some (conceptRetSlotOrNull heuristicConcept [|"heuristicActions"|] |> convStrVariantArrToStrArr);
+                  | None ->
+                    None
+                
+                match heuristicActionsNamesOpt with
+                  | Some heuristicActionsNames ->
+                    printfn "[d5] found heuristicActions of heuristic name=%s" heuristicName;
 
-                // TODO< execute body >
+                    // execute body of heuristic
+                    for iHeuristicActionName in heuristicActionsNames do
+                      let foundHeuristicAction, heuristicAction = heuristicActions.TryGetValue iHeuristicActionName;
+
+                      if foundHeuristicAction then
+                        printfn "[d6]   invoke heuristicAction name=%s" iHeuristicActionName;
+
+                        (heuristicAction invocationCtx);
+                      else
+                        printfn "[w6]   could not find heuristic action name=%s" iHeuristicActionName;
+
+                  | None ->
+                    printfn "[w ] couldn't retrieve heuristicActions of heuristic name=%s" heuristicName;
 
                 ()
 
             | None ->
-              printfn "[w] heuristicConcept=%s pointed at heuristic=%s which was not found!" iHeuristicConceptName heuristicName
+              printfn "[w ] heuristicConcept=%s pointed at heuristic=%s which was not found!" iHeuristicConceptName heuristicName
 
           
           ()
