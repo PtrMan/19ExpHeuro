@@ -267,14 +267,6 @@ let mutable taskCounter: int64 = 0L; // global task counter - each task has a un
 // PUT
 
 
-(* commented because not used
-let GET(x: Dictionary<string, int>, path: string[]) =
-   let y, a = x.TryGetValue(path.[0]);
-   a
-
-let PUT(x: Dictionary<string, int>, path: string[], value: int) =
-   x.Add(path.[0], value)
- *)
 
 
 
@@ -599,6 +591,15 @@ let fillLenatConcepts =
 let fillCustomConcepts =
   let mutable slots: Slot[] = [||];
   
+  // concept from which all heuristics specialize
+  slots <- [|
+    new Slot([|"name"|], fun a -> makeString "Heuristic");
+    new Slot([|"usefulness"|], fun a -> makeFloat 0.999);
+    new Slot([|"usefulnessIsFrozen"|], fun a -> makeLong 1L); // freeze usefulness 
+    //new Slot([|strGen|], fun a -> makeString "Any");
+  |];
+  concepts <- Array.append concepts [|new Concept(slots)|];
+  
   // use to refer and store everything related to the AI itself
   // TODO SCIFI< is a good place to add basic emotion parameters >
   slots <- [|
@@ -654,6 +655,7 @@ let fillLenatHeuristics =
     new Slot([|"name"|], fun a -> makeString heuristicName);
     new Slot([|"usefulness"|], fun a -> (makeFloat 0.75));
     new Slot([|"heuristicActions"|], fun a -> (makeArr [|makeString "heuristicSuggestTasksAction"|])); // IMPL< register action for heuristic >
+    new Slot([|strGen|], fun a -> makeString "Heuristic"); // "is a" relationship
     |];
   concepts <- Array.append concepts [|new Concept(slots)|];
   
@@ -734,7 +736,7 @@ while cycleCnt < 10L && not forceTermination do
     // IMPL< we need to iterate over all concepts >
     // MAYBE OPTIMIZATION< efficiency may get improved by caching it like described in [Lenat phd dissertation pdf page around 39] - but why should we do it when we are working with just a few tasks??? >
     for iConcept in concepts do
-      printfn "[d ] iterate over concept=%s" (retConceptName iConcept)
+      printfn "[d ] iterate over concept=%s for search for matching heuristics" (retConceptName iConcept)
 
       let heuristicInvocationCtx = new HeuristicInvocationCtx(currentTask, iConcept);
       
@@ -751,54 +753,47 @@ while cycleCnt < 10L && not forceTermination do
           
           printfn "[d ] found iHeuristicConceptName=%s of concept=%s" iHeuristicConceptName (retConceptName iConcept);
           
-          // TODO< retrieve heuristic name >
           let heuristicConceptOpt: Concept option = (retConceptByName iHeuristicConceptName)
           let mutable heuristicName = iHeuristicConceptName;
-          // commented because it was a hack for testing
-          //match heuristicConcept with
-          //  | Some c ->
-          //    // TODO< set heuristic name to name referenced by item in heuristicConcept >
-          //    heuristicName <- "H_suggestTasks"; // HACK< for new we workaround by hardcoding it >
-          //    ()
-          //  | None ->
-          //    // TODO< handle error when the concept with the name can't be found >
-          //    
-          //    ()
-
+          
           let heuristicMaybe: Heuristic2 option = (retHeuristicByName heuristicName);
 
           match heuristicMaybe with
             | Some heuristic -> 
-              let invocationCtx = new HeuristicInvocationCtx(currentTask, iConcept);
-              let heuristicFires = (checkLeftSide heuristic invocationCtx)
+                // iterate over applied concepts
+                // TODO< keep track of resource quota's >
+                for iAppliedConcept in concepts do
+                  let invocationCtx = new HeuristicInvocationCtx(currentTask, iAppliedConcept);
+                  let heuristicFires = (checkLeftSide heuristic invocationCtx)
 
-              if heuristicFires then
-                printfn "[d5] heuristicConceptName=%s heuristic=%s FIRING!" iHeuristicConceptName heuristicName;
-                
-                let heuristicActionsNamesOpt: string[] option =
-                  match heuristicConceptOpt with
-                  | Some heuristicConcept ->
-                    Some (conceptRetSlotOrNull heuristicConcept [|"heuristicActions"|] |> convStrVariantArrToStrArr);
-                  | None ->
-                    None
-                
-                match heuristicActionsNamesOpt with
-                  | Some heuristicActionsNames ->
-                    printfn "[d5] found heuristicActions of heuristic name=%s" heuristicName;
+                  if heuristicFires then
+                    printfn "[d5] heuristicConceptName=%s heuristic=%s FIRING!" iHeuristicConceptName heuristicName;
+                    
+                    let heuristicActionsNamesOpt: string[] option =
+                      match heuristicConceptOpt with
+                      | Some heuristicConcept ->
+                        Some (conceptRetSlotOrNull heuristicConcept [|"heuristicActions"|] |> convStrVariantArrToStrArr);
+                      | None ->
+                        None
 
-                    // execute body of heuristic
-                    for iHeuristicActionName in heuristicActionsNames do
-                      let foundHeuristicAction, heuristicAction = heuristicActions.TryGetValue iHeuristicActionName;
+                    match heuristicActionsNamesOpt with
+                      | Some heuristicActionsNames ->
+                        printfn "[d5] found heuristicActions of heuristic name=%s" heuristicName;
 
-                      if foundHeuristicAction then
-                        printfn "[d6]   invoke heuristicAction name=%s" iHeuristicActionName;
+                        // execute body of heuristic
+                        for iHeuristicActionName in heuristicActionsNames do
+                          let foundHeuristicAction, heuristicAction = heuristicActions.TryGetValue iHeuristicActionName;
 
-                        (heuristicAction invocationCtx);
-                      else
-                        printfn "[w6]   could not find heuristic action name=%s" iHeuristicActionName;
+                          if foundHeuristicAction then
+                            
+                            printfn "[d6]   invoke heuristicAction name=%s for concept=%s" iHeuristicActionName (retConceptName iAppliedConcept);
 
-                  | None ->
-                    printfn "[w ] couldn't retrieve heuristicActions of heuristic name=%s" heuristicName;
+                            (heuristicAction invocationCtx);
+                          else
+                            printfn "[w6]   could not find heuristic action name=%s" iHeuristicActionName;
+
+                      | None ->
+                        printfn "[w ] couldn't retrieve heuristicActions of heuristic name=%s" heuristicName;
 
                 ()
 
@@ -842,9 +837,7 @@ while cycleCnt < 10L && not forceTermination do
 
 // datastructure and control structure maintainance
 // * loop prevention mechanism [Lenat phd dissertation pdf page 96]
-
 // * entry policy for agenda [Lenat phd dissertation pdf page 107]
-
 // * reevaluating priorities of tasks [Lenat phd dissertation pdf page 107]
 
 
