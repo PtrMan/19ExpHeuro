@@ -224,18 +224,6 @@ end
 
 let mutable taskCounter: int64 = 0L; // global task counter - each task has a unique id. This is require ust for logging/reference purposes
 
-(* commented because we just have to pick the first task
-// TODO< use it >
-let retHighestPrioritizedTask (agenda: Agenda) =
-  let mutable highestPriorityTask = agenda.tasks.[0]
-
-  for iTask in agenda.tasks do
-    if (iTask.priority > highestPriorityTask.priority) then
-      highestPriorityTask <- iTask;
-  
-  highestPriorityTask
-      
- *)
 
 
 
@@ -353,7 +341,7 @@ let checkLeftSide (heuristic:Heuristic2) (invocationCtx:HeuristicInvocationCtx) 
     elif not (rem.[0] invocationCtx) then
       false
     else
-      checkLeftSideRec (Array.sub rem 1 ((Array.length rem)-1)) // call recursivlyy
+      checkLeftSideRec (Array.sub rem 1 ((Array.length rem)-1)) // call recursivly
   (checkLeftSideRec heuristic.leftSide)
 
 
@@ -621,7 +609,7 @@ let fillLenatHeuristics =
     printfn "[d] heuristicSuggestTasks() called for concept=%s" nameOfConcept
     // TODO< fully implement this heuristic >
   
-  let heuristicName = "suggestTasks";
+  let heuristicName = ("H_"+"suggestTasks");
 
   heuristics2 <- Array.append heuristics2
     [|new Heuristic2(heuristicName, [|heuristicSuggestTaskLeftSide|], [|heuristicSuggestTasksAction|])|]; // IMPL< register >
@@ -630,7 +618,7 @@ let fillLenatHeuristics =
   // create and add heuristic concept
   let slots =
     [|
-    new Slot([|"name"|], fun a -> makeString ("H_"+heuristicName));
+    new Slot([|"name"|], fun a -> makeString heuristicName);
     new Slot([|"usefulness"|], fun a -> (makeFloat 0.75));
     |];
   concepts <- Array.append concepts [|new Concept(slots)|];
@@ -727,16 +715,17 @@ while cycleCnt < 10L && not forceTermination do
           
           // TODO< retrieve heuristic name >
           let heuristicConcept = (retConceptByName iHeuristicConceptName)
-          let mutable heuristicName = "";
-          match heuristicConcept with
-            | Some c ->
-              // TODO< set heuristic name to name referenced by item in heuristicConcept >
-              heuristicName <- "suggestTasks"; // HACK< for new we workaround by hardcoding it >
-              ()
-            | None ->
-              // TODO< handle error when the concept with the name can't be found >
-              
-              ()
+          let mutable heuristicName = iHeuristicConceptName;
+          // commented because it was a hack for testing
+          //match heuristicConcept with
+          //  | Some c ->
+          //    // TODO< set heuristic name to name referenced by item in heuristicConcept >
+          //    heuristicName <- "H_suggestTasks"; // HACK< for new we workaround by hardcoding it >
+          //    ()
+          //  | None ->
+          //    // TODO< handle error when the concept with the name can't be found >
+          //    
+          //    ()
 
           // TODO< add type >
           let heuristicMaybe = (retHeuristicByName heuristicName);
@@ -747,7 +736,7 @@ while cycleCnt < 10L && not forceTermination do
               let heuristicFires = (checkLeftSide heuristic invocationCtx)
 
               if heuristicFires then
-                printfn "[d] heuristicConceptName=%s heuristic=%s FIRED!" iHeuristicConceptName heuristicName;
+                printfn "[d] heuristicConceptName=%s heuristic=%s FIRING!" iHeuristicConceptName heuristicName;
 
                 // TODO< execute body >
 
