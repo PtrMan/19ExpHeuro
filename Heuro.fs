@@ -47,11 +47,10 @@ type Variant = struct
   val mutable valArr: Variant[]
   
   // used to pass functions around and call them dynamically with any arguments
-  // commented because not used
-  //val mutable valFn: (Variant[]->Variant) option
+  val mutable valFn: (Variant[]->Variant) option
   
   new (type__) =
-      {type_ = type__; valInt=0L; valString=""; valFloat=0.0; valArr=[||]}
+      {type_ = type__; valInt=0L; valString=""; valFloat=0.0; valArr=[||]; valFn=None;}
 end
 
 let makeString (value: string) =
@@ -76,6 +75,14 @@ let makeArr (content: Variant[]) =
   let mutable res = new Variant(2);
   res.valArr <- content;
   res
+
+let makeFn (fn_ : Variant[]->Variant) =
+  let mutable res = new Variant(5);
+  res.valFn <- Some fn_;
+  res
+
+let isArr (var:Variant) = var.type_ = 2
+let isNull (var:Variant) = var.type_ = 0
 
 // convert string variant array to native string array
 let convStrVariantArrToStrArr (v:Variant): string[] =
@@ -420,6 +427,24 @@ let conceptAppendHeuristicName (conceptName:string) (slotName:string) (addedHeur
     ()
 
 
+//////////////////////
+/// algorithms for calling by the AI
+
+let algorithm_union (args:Variant[]): Variant =
+  let mutable resArr:Variant[] = [||];
+  
+  // TODO< implement fully >
+  let isAlreadyInResult (checked:Variant) =
+    false
+
+  for iArg in args do
+    // IMPL NOTE< arguments must be arrays! >
+    for iiArg in iArg.valArr do
+      if not (isAlreadyInResult iiArg) then
+        resArr <- Array.append resArr [|iiArg|]
+
+  makeArr resArr
+
 
 //////////////////////
 /// fill concepts with hardcoded concepts from [Lenat phd dissertation]
@@ -530,6 +555,28 @@ let fillLenatConcepts =
     new Slot([|strGen|], fun a -> makeString "Unordered");
   |];
   concepts <- Array.append concepts [|new Concept(slots)|];
+  
+
+  slots <- [|
+    new Slot([|"name"|], fun a -> makeString "Union");
+    new Slot([|"usefulness"|], fun a -> makeFloat 0.1); // 0.1 see [Lenat phd dissertation page pdf 196]
+
+    new Slot([|"domain-range"|], fun a -> makeArr[| makeArr [|makeString "Structures";makeString "Structures";makeString "-->";makeString "Structures"|] |] );
+  |];
+  concepts <- Array.append concepts [|new Concept(slots)|];
+  
+  // see [Lenat phd dissertation page pdf 198]
+  slots <- [|
+    new Slot([|"name"|], fun a -> makeString "Set-Union");
+    new Slot([|"usefulness"|], fun a -> makeFloat 0.1); // 0.1 see [Lenat phd dissertation page pdf 198]
+    new Slot([|strGen|], fun a -> makeString "Union");
+
+    new Slot([|"domain-range"|], fun a -> makeArr [| makeArr [|makeString "Sets";makeString "Sets";makeString "-->";makeString "Sets"|] |] );
+    new Slot([|"algorithms"|], fun a -> makeArr [| makeFn algorithm_union |] );
+  |];
+  concepts <- Array.append concepts [|new Concept(slots)|];
+
+
   
   (* commented because it is not touched by any functionality
   slots <- [|
@@ -713,8 +760,10 @@ let fillDefaultTasks =
 
 
 // -1 to disable debug messages
-let mutable debugVerbosity = 5;
+let mutable debugVerbosity = 10;
 
+// best is to keep it that high to enable all warnings
+let mutable warningVerbosity = 100;
 
 let debug (verbosity:int) (msg:string) =
   let levelAsString = match verbosity with
@@ -723,6 +772,14 @@ let debug (verbosity:int) (msg:string) =
   
   if verbosity <= debugVerbosity then
     printfn "[d%s] %s" levelAsString msg
+
+let warning (verbosity:int) (msg:string) =
+  let levelAsString = match verbosity with
+  | 0 -> " "
+  | _ -> (string)verbosity
+  
+  if verbosity <= warningVerbosity then
+    printfn "[w%s] %s" levelAsString msg
 
 
 // selects a task and processes it
@@ -869,4 +926,139 @@ while cycleCnt < 10L && not forceTermination do
 
 
 
+
+
+
+
+
+
+
+/////////////////
+/// helpers for heuristics
+
+// helper structure for
+// domain and range of a function/predicate
+// see [Lenat phd dissertation page pdf 55] for example with a algorithm
+type DomainRange = {domain: Variant[]; range: Variant}
+
+// returns the domain/range's of a concept
+// see [Lenat phd dissertation page pdf 55] for a detailed discussion of the algorithm
+let conceptRetDomainRange (concept:Concept): DomainRange[] =
+  let idxOfProj (arr:Variant[]): int = // IMPL< index of "-->" >
+    let mutable idx = 0;
+    let mutable return_: bool = false;
+    while idx < (Array.length arr) && not return_ do
+      if arr.[idx].valString = "-->" then
+        return_ <- true;
+      else
+        idx <- idx + 1;
+    idx
+  
+  
+  let mutable res: DomainRange[] = [||];
+  // IMPL< see [Lenat phd dissertation page pdf 55] for a detailed discussion of the algorithm >
+  
+  let domRange: Variant = conceptRetSlotOrNull concept [|"domain-range"|]
+  if isNull domRange then
+    warning 5 "domRange was null because it was not found!";
+
+  if isArr domRange then
+    for iDomRange in domRange.valArr do
+
+      if isArr iDomRange then // IMPL< must be array because we store domain/range as array as [|DA DB "-->" Range0|]]>
+        let idxOfProj2 = (idxOfProj iDomRange.valArr);
+
+        let domain = Array.sub iDomRange.valArr 0 (idxOfProj2);
+        let range = iDomRange.valArr.[idxOfProj2+1];
+
+        res <- Array.append res [|{domain = domain; range = range}|];
+
+  res
+
+
+
+// heuristic as described in Lenat's thesis at pdf page 55
+// IMPL< D stand for "documented" - because Lenat wrote a detailed description of it >
+//
+// TODO< add randomness to heuristicBodyD55 >
+// TODO< add quota to heuristicBodyD55 >
+// TODO< make up small example to (unit) test it!!! >
+let heuristicBodyD55 =
+  // IMPL< see [Lenat phd dissertation page pdf 55] for a detailed discussion of the algorithm >
+  // IMPL< comments are numbered and named after the descriptions in Lenat's thesis >
+  
+  // TODO< assign real index to it >
+  let FIdx: int = 14; // index of the referenced concept by F
+  
+
+  
+  // IMPL< 1. find the domain of F and call it D >
+  let D: DomainRange[] = conceptRetDomainRange concepts.[FIdx];
+
+  // IMPL< 2. find example of D and call them E >
+  let E: Variant = conceptRetSlotOrNull concepts.[FIdx] [|"examples"|];
+  if isNull E then
+    debug 10 "abort heuristicBodyD55() because no examples were found!"
+  else
+    // IMPL< 3. find an algorithm to compute F and call it A >
+    // IMPL<   we do this by randomly choosing a entry from the "algorithm" faces
+    let A2: Variant = conceptRetSlotOrNull concepts.[FIdx] [|"algorithms"|];
+    if isNull A2 then
+      warning 0 "algorithms is null!";
+    
+    
+    let mutable A: Variant = makeNull;
+    if not (isNull A2) then
+      // TODO< choose random algorithm >
+      A <- A2.valArr.[0];
+    
+
+    printfn "HERE"
+
+    // TODO< check for quota and update quota >
+    // IMPL< loop 4 >
+    while true do
+      // IMPL< 4a choose any member >
+      let E1 = E.valArr.[0].valArr; // HACK TODO< we just choose the first one >
+      
+      // IMPL< 4b run A on E1 and call the result X >
+      let X = match A.valFn with
+      | Some fn ->
+        debug 10 "run algorithm"
+        let res = (fn E1);
+        debug 10 "    algorithm was run"
+        res
+      | None ->
+        warning 0 "A was not a valid function!"
+        (makeNull)
+      
+      
+      // IMPL< 4c check whether <E1,X> satifies the definition of F >
+      let flag = false; // TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO;
+      // IMPL< 4d if so, then add <E1 --> X> to the examples facet of F >
+      
+      // adds example to slot or creates slot
+      let addToSlot (slotName:string) added = 
+        let mutable examples: Variant = (makeNull);
+        if slotHas concepts.[FIdx].slots [|slotName|] then
+          examples <- slotGet concepts.[FIdx].slots [|slotName|] "";
+        
+        examples.valArr <- Array.append examples.valArr added;
+        slotPut concepts.[FIdx].slots [|slotName|] "" examples;
+      
+      if flag then
+        // IMPL< add <E1 --> X> to the examples of F >
+        let mutable added = Array.copy E1;
+        added <- Array.append added [|(makeString "-->"); X|];
+        addToSlot "examples" added
+        ()
+
+      
+      // IMPL< 4e if not, then add <E1 --> X> to the non-examples facet of F >
+      if not flag then
+        // IMPL< add <E1 --> X> to the non-examples of F >
+        let mutable added = Array.copy E1;
+        added <- Array.append added [|(makeString "-->"); X|];
+        addToSlot "non-examples" added
+        ()
 
