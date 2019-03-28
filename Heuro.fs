@@ -111,6 +111,43 @@ let convStrVariantArrToStrArr (v:Variant): string[] =
 
 
 
+
+
+
+// -1 to disable debug messages
+let mutable debugVerbosity = 10;
+
+// best is to keep it that high to enable all warnings
+let mutable warningVerbosity = 100;
+
+let debug (verbosity:int) (msg:string) =
+  let levelAsString = match verbosity with
+  | 0 -> " "
+  | _ -> (string)verbosity
+  
+  if verbosity <= debugVerbosity then
+    printfn "[d%s] %s" levelAsString msg
+
+let warning (verbosity:int) (msg:string) =
+  let levelAsString = match verbosity with
+  | 0 -> " "
+  | _ -> (string)verbosity
+  
+  if verbosity <= warningVerbosity then
+    printfn "[w%s] %s" levelAsString msg
+
+let error (msg:string) =
+  printfn "[fatal] %s" msg
+  exit 1
+  ()
+
+let assert_ (b:bool) (msg:string) =
+  if not b then
+    error (String.Format ("assertation failed! msg={0}", msg))
+
+
+
+
 // short names of facets/slots
 let strGen = "generalization";
 let strSpec = "specialization";
@@ -204,6 +241,37 @@ let conceptRetSlotOrNull (concept:Concept) (slotAdress:string[]): Variant =
     slotGet concept.slots slotAdress ""
   else
     makeNull // IMPL< return null as default >
+
+// helper for concept
+// 
+// returns if the domain and range point to the same concepts
+let conceptIsOperationWithSameDomainAndRange (concept:Concept) =
+  let conceptName = conceptRetSlotOrNull concept [|"name"|];
+  
+  let domainRange: Variant = conceptRetSlotOrNull concept [|"domain-range"|];
+
+  if domainRange.type_ = 6 then // IMPL< must be Symb* ! >
+    match domainRange.valSymbl with
+    | Some domainRange ->
+      match domainRange with
+      | SymblBinary (l, "-->", r) ->
+        match l with
+        | SymblProd lp ->
+          List.forall (fun a -> a = r) lp
+        | _ ->
+          warning 0 (String.Format ("conceptIsOperationWithSameDomainAndRange() called for concept={0} which had invalid symbolic description!", conceptName));
+          false
+      | _ ->
+        warning 0 (String.Format ("conceptIsOperationWithSameDomainAndRange() called for concept={0} which had invalid symbolic description!", conceptName));
+        false
+    | _ ->
+      warning 0 (String.Format ("conceptIsOperationWithSameDomainAndRange() called for concept={0} which had no 'domain-range'!", conceptName));
+      false
+  else
+    warning 0 (String.Format ("conceptIsOperationWithSameDomainAndRange() called for concept={0} which had no !", conceptName));
+    false
+
+
 
 
 // reason for a task
@@ -530,9 +598,10 @@ let fillLenatConcepts =
   // see [Lenat phd dissertation page pdf 113]
   // "Activity represents something that can be performed"
   //   [Lenat phd dissertation page pdf 114]
+  //   definition [Lenat phd dissertation page pdf 182]
   
   slots <- [|
-    new Slot([|"name"|], fun a -> makeString "Activity");
+    new Slot([|"name"|], fun a -> makeString "Active");
     new Slot([|"usefulness"|], fun a -> makeFloat 0.5);
     new Slot([|strGen|], fun a -> makeString "Any-concept");
   |];
@@ -542,14 +611,14 @@ let fillLenatConcepts =
   slots <- [|
     new Slot([|"name"|], fun a -> makeString "Operation");
     new Slot([|"usefulness"|], fun a -> makeFloat 0.5);
-    new Slot([|strGen|], fun a -> makeString "Activity");
+    new Slot([|strGen|], fun a -> makeString "Active");
   |];
   concepts <- Array.append concepts [|new Concept(slots)|];
 
   slots <- [|
     new Slot([|"name"|], fun a -> makeString "Predicate");
     new Slot([|"usefulness"|], fun a -> makeFloat 0.5);
-    new Slot([|strGen|], fun a -> makeString "Activity");
+    new Slot([|strGen|], fun a -> makeString "Active");
   |];
   concepts <- Array.append concepts [|new Concept(slots)|];
 
@@ -590,7 +659,8 @@ let fillLenatConcepts =
   slots <- [|
     new Slot([|"name"|], fun a -> makeString "Union");
     new Slot([|"usefulness"|], fun a -> makeFloat 0.1); // 0.1 see [Lenat phd dissertation page pdf 196]
-
+    
+    // TODO< rewrite domain and range to use of Syml* structure family >
     new Slot([|"domain-range"|], fun a -> makeArr[| makeArr [|makeString "Structures";makeString "Structures";makeString "-->";makeString "Structures"|] |] );
   |];
   concepts <- Array.append concepts [|new Concept(slots)|];
@@ -608,6 +678,9 @@ let fillLenatConcepts =
   |];
   concepts <- Array.append concepts [|new Concept(slots)|];
   
+
+  ////////////////
+  /// "Compose" concept
   
   let composeDefinitionDeclarativeSlowRightSide = SymblFn ("A", [SymblFn ("B", [SymblName "x"])]);
   let composeDefinitionDeclarativeSlowSymbl = SymblBinary (SymblFn ("C", [SymblName "x"]), "=", composeDefinitionDeclarativeSlowRightSide);
@@ -631,6 +704,8 @@ let fillLenatConcepts =
   |];
   concepts <- Array.append concepts [|new Concept(slots)|];
   
+
+
   (*
 
   // see [Lenat phd dissertation page pdf 94]
@@ -722,62 +797,166 @@ let heuristicActions :Dictionary<string, HeuristicInvocationCtx->unit> = new Dic
 
 
 let fillLenatHeuristics =
-  // if there are no examples for concept C filled in so far,
-  // THEN 
-  // consider the task "Fillin examples of C", 
-  // for the following reason: 
-  // "No examples of C filled in so far", 
-  // whose value is half of Worth(C). 
-  // If that value is below argi, then forget it; 
-  // otherwise, try to add to to the agenda.
-  // [Lenat phd dissertation pdf page 107]
-  
-  
-  let heuristicSuggestTaskLeftSide (invocationCtx:HeuristicInvocationCtx) =
-    // return true iff Concept has no examples
-    not (slotHas invocationCtx.concept.slots [|"examples"|])
-
-  // heuristic to suggest new tasks which may be plausible at the current time
-  
-  let heuristicSuggestTasksAction (invocationCtx:HeuristicInvocationCtx) =
-    let nameOfConcept = (retConceptName invocationCtx.concept);
-
-    let reason_hr = "no examples of "+nameOfConcept+" filled in so far" // human readable reason
-
-    printfn "[d ] heuristicSuggestTasks() called for concept=%s" nameOfConcept
-    // TODO< fully implement this heuristic >
-  
-  heuristicActions.Add("heuristicSuggestTasksAction", heuristicSuggestTasksAction); // IMPL< register action >
-
-  let heuristicName = ("H_"+"suggestTasks");
-
-  heuristics2 <- Array.append heuristics2
-    [|new Heuristic2(heuristicName, [|heuristicSuggestTaskLeftSide|])|]; // IMPL< register >
-  
-  
-  // create and add heuristic concept
-  let slots =
-    [|
-    new Slot([|"name"|], fun a -> makeString heuristicName);
-    new Slot([|"usefulness"|], fun a -> (makeFloat 0.75));
-    new Slot([|"heuristicActions"|], fun a -> (makeArr [|makeString "heuristicSuggestTasksAction"|])); // IMPL< register action for heuristic >
-    new Slot([|strGen|], fun a -> makeString "Heuristic"); // "is a" relationship
-    |];
-  concepts <- Array.append concepts [|new Concept(slots)|];
-  
-  
-  // add heuristic to "Any-concept" concept
-  let anyConceptMaybe: Concept option = (retConceptByName "Any-concept");
-  
-  match anyConceptMaybe with
-  | Some c ->
+  let fillHeuristicSuggestAction =
+    // if there are no examples for concept C filled in so far,
+    // THEN 
+    // consider the task "Fillin examples of C", 
+    // for the following reason: 
+    // "No examples of C filled in so far", 
+    // whose value is half of Worth(C). 
+    // If that value is below argi, then forget it; 
+    // otherwise, try to add to to the agenda.
+    // [Lenat phd dissertation pdf page 107]
     
-    updateConceptSlot "Any-concept" [|"suggest"|] (makeString ""); // IMPL< ensure the slot exists >    
-    conceptAppendHeuristicName "Any-concept" "suggest" heuristicName
     
-  | None -> 
-    printfn "[w ] couldn't find concept=%s" "Any-concept";
+    let heuristicSuggestTaskLeftSide (invocationCtx:HeuristicInvocationCtx) =
+      // return true iff Concept has no examples
+      not (slotHas invocationCtx.concept.slots [|"examples"|])
+
+    // heuristic to suggest new tasks which may be plausible at the current time
+    
+    let heuristicSuggestTasksAction (invocationCtx:HeuristicInvocationCtx) =
+      let nameOfConcept = (retConceptName invocationCtx.concept);
+
+      let reason_hr = "no examples of "+nameOfConcept+" filled in so far" // human readable reason
+
+      printfn "[d ] heuristicSuggestTasks() called for concept=%s" nameOfConcept
+      // TODO< fully implement this heuristic >
+    
+    heuristicActions.Add("heuristicSuggestTasksAction", heuristicSuggestTasksAction); // IMPL< register action >
+
+    let heuristicName = ("H_"+"suggestTasks");
+
+    heuristics2 <- Array.append heuristics2
+      [|new Heuristic2(heuristicName, [|heuristicSuggestTaskLeftSide|])|]; // IMPL< register >
+    
+    
+    // create and add heuristic concept
+    let slots =
+      [|
+      new Slot([|"name"|], fun a -> makeString heuristicName);
+      new Slot([|"usefulness"|], fun a -> (makeFloat 0.75));
+      new Slot([|"heuristicActions"|], fun a -> (makeArr [|makeString "heuristicSuggestTasksAction"|])); // IMPL< register action for heuristic >
+      new Slot([|strGen|], fun a -> makeString "Heuristic"); // "is a" relationship
+      |];
+    concepts <- Array.append concepts [|new Concept(slots)|];
+    
+    
+    // add heuristic to "Any-concept" concept
+    let anyConceptMaybe: Concept option = (retConceptByName "Any-concept");
+    
+    match anyConceptMaybe with
+    | Some c ->
+      
+      updateConceptSlot "Any-concept" [|"suggest"|] (makeString ""); // IMPL< ensure the slot exists >    
+      conceptAppendHeuristicName "Any-concept" "suggest" heuristicName
+      
+    | None -> 
+      printfn "[w ] couldn't find concept=%s" "Any-concept";
   
+  (fillHeuristicSuggestAction)
+  
+
+
+
+
+
+
+
+
+
+
+  let fillHeuristic185 =
+    // 185. 
+    // Given an interesting operation F:An..A,
+    //
+    // consider composing F with itself.
+    // [Lenat phd dissertation pdf page 272]
+    
+    
+    let heuristicLeftSide (invocationCtx:HeuristicInvocationCtx) =
+      let interestingThreshold = 0.7;
+
+      // TODO< check if concept with name of the composition result exists already
+      if false then
+        false // composition already exists
+      else
+        true &&
+          (conceptRetSlotOrNull invocationCtx.concept [|"interestingness"|]).valFloat >= interestingThreshold &&
+          (conceptIsOperationWithSameDomainAndRange invocationCtx.concept)
+
+    // heuristic to suggest new tasks which may be plausible at the current time
+    
+    let heuristicAction (invocationCtx:HeuristicInvocationCtx) =
+      // compose a new function concept out of the source function concepts
+      let composeFunctionAndCreateConceptIfPossible (a:Concept) (b:Concept) =
+        let nameOfConcept = (retConceptName invocationCtx.concept);
+
+
+        let generalization = (conceptRetSlotOrNull a [|strGen|]); // generalization of source concept which is a function
+        assert_ (not (isNull generalization)) "H185 generalization was null!";
+
+        let slots =
+          [|
+          new Slot([|"name"|], fun a -> makeString (nameOfConcept + " o " + nameOfConcept) );
+          new Slot([|"usefulness"|], fun a -> (makeFloat 0.1));
+          new Slot([|strGen|], fun a -> generalization);
+          // TODO< field for definition which we compose out of the definition of the source concept(s) >
+          // TODO< other fields >
+          |];
+        concepts <- Array.append concepts [|new Concept(slots)|];
+
+        ()
+
+      let nameOfConcept = (retConceptName invocationCtx.concept);
+
+      debug 0 (String.Format ("Heuristic185 called for concept={0}!", nameOfConcept));
+
+      // TODO< fully implement this heuristic >
+
+      // TODO< call composeFunctionAndCreateConceptIfNecessary() for other compositions - see  >
+      composeFunctionAndCreateConceptIfPossible invocationCtx.concept invocationCtx.concept; // just compose with itself
+    
+    heuristicActions.Add("heuristic185SuggestAction", heuristicAction); // IMPL< register action >
+
+    let heuristicName = ("H_"+"185");
+
+    heuristics2 <- Array.append heuristics2
+      [|new Heuristic2(heuristicName, [|heuristicLeftSide|])|]; // IMPL< register >
+    
+    
+    // create and add heuristic concept
+    let slots =
+      [|
+      new Slot([|"name"|], fun a -> makeString heuristicName);
+      new Slot([|"usefulness"|], fun a -> (makeFloat 0.75));
+      new Slot([|"heuristicActions"|], fun a -> (makeArr [|makeString "heuristic185SuggestAction"|])); // IMPL< register action for heuristic >
+      new Slot([|strGen|], fun a -> makeString "Heuristic"); // "is a" relationship
+      |];
+    concepts <- Array.append concepts [|new Concept(slots)|];
+    
+    
+    // add heuristic to concept
+    let conceptNameOfAddedHeuristic = "Composition";
+    match (retConceptByName conceptNameOfAddedHeuristic) with
+    | Some c ->
+      
+      updateConceptSlot conceptNameOfAddedHeuristic [|"suggest"|] (makeString ""); // IMPL< ensure the slot exists >    
+      conceptAppendHeuristicName conceptNameOfAddedHeuristic "suggest" heuristicName
+      
+    | None -> 
+      warning 0 (String.Format ("couldn't find concept={0}", conceptNameOfAddedHeuristic))
+
+
+  (fillHeuristic185)
+
+
+
+
+
+
+
+
 
 
   ()
@@ -810,29 +989,6 @@ let fillDefaultTasks =
 // fill start tasks
 (fillDefaultTasks)
 
-
-
-// -1 to disable debug messages
-let mutable debugVerbosity = 10;
-
-// best is to keep it that high to enable all warnings
-let mutable warningVerbosity = 100;
-
-let debug (verbosity:int) (msg:string) =
-  let levelAsString = match verbosity with
-  | 0 -> " "
-  | _ -> (string)verbosity
-  
-  if verbosity <= debugVerbosity then
-    printfn "[d%s] %s" levelAsString msg
-
-let warning (verbosity:int) (msg:string) =
-  let levelAsString = match verbosity with
-  | 0 -> " "
-  | _ -> (string)verbosity
-  
-  if verbosity <= warningVerbosity then
-    printfn "[w%s] %s" levelAsString msg
 
 
 // selects a task and processes it
@@ -997,7 +1153,10 @@ type DomainRange = {domain: Variant[]; range: Variant}
 // returns the domain/range's of a concept
 // see [Lenat phd dissertation page pdf 55] for a detailed discussion of the algorithm
 let conceptRetDomainRange (concept:Concept): DomainRange[] =
+  
   let idxOfProj (arr:Variant[]): int = // IMPL< index of "-->" >
+    // TODO< rewrite to use Symbl* family - because it was changed to it!!! >
+    
     let mutable idx = 0;
     let mutable return_: bool = false;
     while idx < (Array.length arr) && not return_ do
