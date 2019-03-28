@@ -516,101 +516,62 @@ let algorithm_union (args:Variant[]): Variant =
   makeArr resArr
 
 
+
+type AddConceptInfo = { name: string; usefulness: float }
+
+// adds a concept with the fields
+let conceptsAdd (info:AddConceptInfo) (fields: (string * Variant) list) =
+  let mutable slots = [||];
+  slots <- [|
+    new Slot([|"name"|], fun a -> makeString info.name);
+    new Slot([|"usefulness"|], fun a -> makeFloat info.usefulness);
+    //new Slot([|strGen|], fun a -> makeString "Active");
+  |];
+  
+  for fieldName, fieldValue in fields do
+    slots <- Array.append slots [|new Slot([|fieldName|], fun a -> fieldValue)|]
+
+  concepts <- Array.append concepts [|new Concept(slots)|];
+
 //////////////////////
 /// fill concepts with hardcoded concepts from [Lenat phd dissertation]
 let fillLenatConcepts =
   let mutable slots: Slot[] = [||];
   
   // is important! see [Lenat phd dissertation page pdf 138] for justification
-  slots <- [|
-    new Slot([|"name"|], fun a -> makeString "Equality");
-    new Slot([|"usefulness"|], fun a -> makeFloat 0.8); // boosted usefulness
-    //new Slot([|strGen|], fun a -> makeString "TODO");
-  |];
-  concepts <- Array.append concepts [|new Concept(slots)|];
+  conceptsAdd {name="Equality"; usefulness=0.8} []
 
+  conceptsAdd {name="Anything"; usefulness=0.5} []
 
-
-  slots <- [|
-    new Slot([|"name"|], fun a -> makeString "Anything");
-    new Slot([|"usefulness"|], fun a -> makeFloat 0.5);
-  |];
-  concepts <- Array.append concepts [|new Concept(slots)|];
   
   // see [Lenat phd dissertation page pdf 113]
-  slots <- [|
-    new Slot([|"name"|], fun a -> makeString "Any-concept");
-    new Slot([|"usefulness"|], fun a -> makeFloat 0.5);
-    new Slot([|strGen|], fun a -> makeString "Anything");
-  |];
-  concepts <- Array.append concepts [|new Concept(slots)|];
-
+  conceptsAdd {name="Any-concept"; usefulness=0.5} [(strGen, makeString "Anything")]
+  
   // see [Lenat phd dissertation page pdf 113]
-  slots <- [|
-    new Slot([|"name"|], fun a -> makeString "Object");
-    new Slot([|"usefulness"|], fun a -> makeFloat 0.5);
-    new Slot([|strGen|], fun a -> makeString "Any-concept");
-  |];
-  concepts <- Array.append concepts [|new Concept(slots)|];
+  conceptsAdd {name="Object"; usefulness=0.5} [(strGen, makeString "Any-concept")]
   
   // see [Lenat phd dissertation page pdf 113]
   // "Structure" means data-structure here!
-  slots <- [|
-    new Slot([|"name"|], fun a -> makeString "Structure");
-    new Slot([|"usefulness"|], fun a -> makeFloat 0.5);
-    new Slot([|strGen|], fun a -> makeString "Object");
-  |];
-  concepts <- Array.append concepts [|new Concept(slots)|];
+  conceptsAdd {name="Structure"; usefulness=0.5} [(strGen, makeString "Object")]
 
   // see [Lenat phd dissertation page pdf 113]
-  slots <- [|
-    new Slot([|"name"|], fun a -> makeString "Ordered");
-    new Slot([|"usefulness"|], fun a -> makeFloat 0.5);
-    new Slot([|strGen|], fun a -> makeString "Structure");
-  |];
-  concepts <- Array.append concepts [|new Concept(slots)|];
-
-  // see [Lenat phd dissertation page pdf 113]
-  slots <- [|
-    new Slot([|"name"|], fun a -> makeString "Unordered");
-    new Slot([|"usefulness"|], fun a -> makeFloat 0.5);
-    new Slot([|strGen|], fun a -> makeString "Structure");
-  |];
-  concepts <- Array.append concepts [|new Concept(slots)|];
-
-  slots <- [|
-    new Slot([|"name"|], fun a -> makeString "Numbers");
-    new Slot([|"usefulness"|], fun a -> makeFloat 0.5);
-  |];
-  concepts <- Array.append concepts [|new Concept(slots)|];
+  conceptsAdd {name="Ordered"; usefulness=0.5} [(strGen, makeString "Structure")]
+  conceptsAdd {name="Unordered"; usefulness=0.5} [(strGen, makeString "Structure")]
+  
+  conceptsAdd {name="Numbers"; usefulness=0.5} []
 
   // see [Lenat phd dissertation page pdf 113]
   // "Activity represents something that can be performed"
   //   [Lenat phd dissertation page pdf 114]
   //   definition [Lenat phd dissertation page pdf 182]
-  
-  slots <- [|
-    new Slot([|"name"|], fun a -> makeString "Active");
-    new Slot([|"usefulness"|], fun a -> makeFloat 0.5);
-    new Slot([|strGen|], fun a -> makeString "Any-concept");
-  |];
-  concepts <- Array.append concepts [|new Concept(slots)|];
+  conceptsAdd {name="Active"; usefulness=0.5} [(strGen, makeString "Any-concept")]
 
   // see [Lenat phd dissertation page pdf 113]
-  slots <- [|
-    new Slot([|"name"|], fun a -> makeString "Operation");
-    new Slot([|"usefulness"|], fun a -> makeFloat 0.5);
-    new Slot([|strGen|], fun a -> makeString "Active");
-  |];
-  concepts <- Array.append concepts [|new Concept(slots)|];
+  conceptsAdd {name="Operation"; usefulness=0.5} [(strGen, makeString "Active")]
+  
+  conceptsAdd {name="Predicate"; usefulness=0.5} [(strGen, makeString "Active")]
 
-  slots <- [|
-    new Slot([|"name"|], fun a -> makeString "Predicate");
-    new Slot([|"usefulness"|], fun a -> makeFloat 0.5);
-    new Slot([|strGen|], fun a -> makeString "Active");
-  |];
-  concepts <- Array.append concepts [|new Concept(slots)|];
-
+  // TODO< rewrite to use conceptsAdd() for most other creations of concepts! >
   
   // see [Lenat phd dissertation page pdf 215]
   slots <- [|
