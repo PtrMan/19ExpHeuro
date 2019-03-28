@@ -36,11 +36,16 @@ let calcUsefulness (reasonRating:float[]) (act:float) (facet:float) (concept:flo
   (dist reasonRating) * (0.2*act + 0.3*facet + 0.5*concept)
 
 
+// Symbolic experession for symbolic descriptions and later Predicate Calculus etc
+type Symbl =
+| SymblAtom of string // name or something
+| SymblFn of string * Symbl[] // function like "a(b, c)"
+| SymblBinary of Symbl * string * Symbl // binary relation like "a = b"
 
 
-
+// IMPL TODO< refactor to type without a struct >
 type Variant = struct
-  val type_: int // datatype : 0 : null, 1: string, 2: array, 3: long, 4: float, 5: function
+  val type_: int // datatype : 0 : null, 1: string, 2: array, 3: long, 4: float, 5: function, 6: Symbl
   val mutable valInt: int64
   val mutable valString: string
   val mutable valFloat: float
@@ -49,9 +54,16 @@ type Variant = struct
   // used to pass functions around and call them dynamically with any arguments
   val mutable valFn: (Variant[]->Variant) option
   
+  val mutable valSymbl: Symbl option
+
   new (type__) =
-      {type_ = type__; valInt=0L; valString=""; valFloat=0.0; valArr=[||]; valFn=None;}
+      {type_ = type__; valInt=0L; valString=""; valFloat=0.0; valArr=[||]; valFn=None; valSymbl=None;}
 end
+
+let makeSymbl (value: Symbl) =
+  let mutable res = new Variant(6);
+  res.valSymbl <- Some value;
+  res
 
 let makeString (value: string) =
   let mutable res = new Variant(1);
@@ -540,6 +552,23 @@ let fillLenatConcepts =
   |];
   concepts <- Array.append concepts [|new Concept(slots)|];
 
+  
+  // see [Lenat phd dissertation page pdf 215]
+  slots <- [|
+    new Slot([|"name"|], fun a -> makeString "Atom-obj");
+    new Slot([|"usefulness"|], fun a -> makeFloat 0.1);
+    new Slot([|strGen|], fun a -> makeString "Object");
+  |];
+  concepts <- Array.append concepts [|new Concept(slots)|];
+
+  // see [Lenat phd dissertation page pdf 215]
+  slots <- [|
+    new Slot([|"name"|], fun a -> makeString "BooleanTruth-Value");
+    new Slot([|"usefulness"|], fun a -> makeFloat 0.1);
+    new Slot([|strGen|], fun a -> makeString "Atom-obj");
+  |];
+  concepts <- Array.append concepts [|new Concept(slots)|];
+
   // see [Lenat phd dissertation page pdf 113]
   slots <- [|
     new Slot([|"name"|], fun a -> makeString "Lists");
@@ -575,14 +604,22 @@ let fillLenatConcepts =
     new Slot([|"algorithms"|], fun a -> makeArr [| makeFn algorithm_union |] );
   |];
   concepts <- Array.append concepts [|new Concept(slots)|];
+  
 
 
   
   (* commented because it is not touched by any functionality
   slots <- [|
-    new Slot([|"name"|], fun a -> makeString "Composition");
-    new Slot([|"usefulness"|], fun a -> makeFloat 0.5);
+    new Slot([|"name"|], fun a -> makeString "Compose");
+    new Slot([|"usefulness"|], fun a -> makeFloat 0.1);
     new Slot([|strGen|], fun a -> makeString "Operation");
+    
+    // definitions
+    new Slot([|"definition"|], fun a -> makeArr [|
+      // declarative slow 
+      makeArr[| makeStr "declarative"; makeStr "slow";
+        // C(x) = A(B(x))
+        makeArr[| makeStr"C"; makeStr"("; makeStr"x"; makeStr"="; makeStr "A"; makeStr "(" makeArr[| makeStr "B"; makeStr "("; makeStr "x" |] |]  |]);
   |];
   concepts <- Array.append concepts [|new Concept(slots)|];
 
@@ -662,7 +699,14 @@ let fillCustomConcepts =
     //new Slot([|strGen|], fun a -> makeString "Any");
   |];
   concepts <- Array.append concepts [|new Concept(slots)|];
-
+  
+  slots <- [|
+    new Slot([|"name"|], fun a -> makeString "Integer");
+    new Slot([|"usefulness"|], fun a -> makeFloat 0.999);
+    new Slot([|"usefulnessIsFrozen"|], fun a -> makeLong 1L); // freeze usefulness 
+    new Slot([|strGen|], fun a -> makeString "Atom-obj");
+  |];
+  concepts <- Array.append concepts [|new Concept(slots)|];
 
 // we need a way to store the (typed) bodies used by the heuristics
 let heuristicActions :Dictionary<string, HeuristicInvocationCtx->unit> = new Dictionary<string, HeuristicInvocationCtx->unit>()
@@ -988,7 +1032,7 @@ let heuristicBodyD55 =
   // IMPL< comments are numbered and named after the descriptions in Lenat's thesis >
   
   // TODO< assign real index to it >
-  let FIdx: int = 14; // index of the referenced concept by F
+  let FIdx: int = -1; // index of the referenced concept by F
   
 
   
@@ -1062,3 +1106,45 @@ let heuristicBodyD55 =
         addToSlot "non-examples" added
         ()
 
+
+
+
+
+
+// can behave as union or append of list
+let fuse (isSet:bool) (a:Variant[]) (b:Variant[]): Variant[] =
+  let mutable res = Array.copy a;
+  
+  let isInRes (v:Variant): bool =
+    let rec eq (a:Variant) (b:Variant) =
+      if a.type_ <> b.type_ then
+        false
+      else
+        match a.type_ with
+        | 0 -> true // null is always equal
+        | 1 -> a.valString = b.valString
+        | 3 -> a.valInt = b.valInt
+        | 4 -> a.valFloat = b.valFloat
+        | 5 -> false // can't compare functions
+        | 2 ->
+          // array
+          if (Array.length a.valArr) = (Array.length b.valArr) then
+            let mutable idx = 0;
+            let mutable res = true;
+            while idx < (Array.length a.valArr) do
+              res <- res && (eq (a.valArr.[idx]) (b.valArr.[idx]));
+              idx <- idx + 1;
+            res
+          else
+            false
+    
+    if isSet then
+      Array.exists (eq v) res
+    else
+      false // IMPL< just append if it has to behave like a array - append >
+  
+  for iB in b do
+    if not (isInRes iB) then
+      res <- Array.append res [|iB|];
+  
+  res
