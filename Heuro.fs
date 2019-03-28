@@ -247,6 +247,8 @@ let conceptRetSlotOrNull (concept:Concept) (slotAdress:string[]): Variant =
 // returns if the domain and range point to the same concepts
 let conceptIsOperationWithSameDomainAndRange (concept:Concept) =
   let conceptName = conceptRetSlotOrNull concept [|"name"|];
+
+  // TODO< check if it isa Operation or if a generalization isa Operation >
   
   let domainRange: Variant = conceptRetSlotOrNull concept [|"domain-range"|];
 
@@ -406,19 +408,6 @@ type Heuristic = struct
 
   val actions: (HeuristicInvocationCtx->unit)[]
 end
-
-let checkLeftSide (heuristic:Heuristic) (invocationCtx:HeuristicInvocationCtx) =
-  if not (heuristic.leftSideFirst invocationCtx) then
-    false
-  else
-    let rec checkLeftSideRec (rem:(HeuristicInvocationCtx->bool)[]) =
-      if (Array.length rem) = 0 then
-        true
-      elif not (rem.[0] invocationCtx) then
-        false
-      else
-        checkLeftSideRec (Array.sub rem 1 ((Array.length rem)-1)) // call recursivlyy
-    (checkLeftSideRec heuristic.leftSideFollowing)
 
 *)
 
@@ -660,6 +649,8 @@ let fillLenatConcepts =
     new Slot([|"name"|], fun a -> makeString "Union");
     new Slot([|"usefulness"|], fun a -> makeFloat 0.1); // 0.1 see [Lenat phd dissertation page pdf 196]
     
+    new Slot([|"isa"|], fun a -> makeString "Operation");
+
     // TODO< rewrite domain and range to use of Syml* structure family >
     new Slot([|"domain-range"|], fun a -> makeArr[| makeArr [|makeString "Structures";makeString "Structures";makeString "-->";makeString "Structures"|] |] );
   |];
@@ -820,7 +811,7 @@ let fillLenatHeuristics =
 
       let reason_hr = "no examples of "+nameOfConcept+" filled in so far" // human readable reason
 
-      printfn "[d ] heuristicSuggestTasks() called for concept=%s" nameOfConcept
+      debug 0 (String.Format ("heuristicSuggestTasks() called for concept={0}", nameOfConcept))
       // TODO< fully implement this heuristic >
     
     heuristicActions.Add("heuristicSuggestTasksAction", heuristicSuggestTasksAction); // IMPL< register action >
@@ -881,6 +872,8 @@ let fillLenatHeuristics =
       if false then
         false // composition already exists
       else
+        printfn "HERE505";
+
         true &&
           (conceptRetSlotOrNull invocationCtx.concept [|"interestingness"|]).valFloat >= interestingThreshold &&
           (conceptIsOperationWithSameDomainAndRange invocationCtx.concept)
@@ -963,7 +956,7 @@ let fillLenatHeuristics =
 
 let mutable taskIdCounter = 0L;
 
-let fillDefaultTasks =
+let fillDefaultTasks () =
   let mutable task = new Task(taskIdCounter, 0.5);
   taskIdCounter <- taskIdCounter + 1L;
   task.taskType <- "fillin";
@@ -987,7 +980,7 @@ let fillDefaultTasks =
 (fillLenatHeuristics)
 
 // fill start tasks
-(fillDefaultTasks)
+//(fillDefaultTasks ())
 
 
 // tries to apply the task to a (host) concept
@@ -1056,9 +1049,10 @@ let tryApplyTaskToConcept (task:Task) (hostConcept:Concept) =
 
       
       ()
+    
 
 // selects a task and processes it
-let selectTaskAndProcess =
+let selectTaskAndProcess () =
   // loop consists out of   https://www.quora.com/Has-Douglas-Lenats-EURISKO-research-ever-been-reproduced
   // * Find something to do (pull a high-value task off an agenda)
   //   * Go do it
@@ -1073,59 +1067,16 @@ let selectTaskAndProcess =
   for iHostConcept in concepts do
     debug 0 (String.Format("iterate over concept={0} for search for matching heuristics", retConceptName iHostConcept));
     tryApplyTaskToConcept currentTask iHostConcept
-
+  
   // we need to remove the task
   // see  [Lenat phd dissertation pdf page 39]
+  // TODO< delete it only when we don't have any more space for the task or when the heuristic forces a deletion >
   agenda.tasks <- Array.sub agenda.tasks 1 ((Array.length agenda.tasks) - 1);
+
+
 
   // insert new tasks
   // TODO< >
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// Notes about [Lenat phd dissertation]
-// 5.2.4 Views
-//   * details views and contains an example of a walk of a specialization of a datastructure
-//   * contains example on how views update facets
-
-
-// datastructure and control structure maintainance
-// * loop prevention mechanism [Lenat phd dissertation pdf page 96]
-// * entry policy for agenda [Lenat phd dissertation pdf page 107]
-// * reevaluating priorities of tasks [Lenat phd dissertation pdf page 107]
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 /////////////////
@@ -1181,7 +1132,7 @@ let conceptRetDomainRange (concept:Concept): DomainRange[] =
 // TODO< add randomness to heuristicBodyD55 >
 // TODO< add quota to heuristicBodyD55 >
 // TODO< make up small example to (unit) test it!!! >
-let heuristicBodyD55 =
+let heuristicBodyD55 () =
   // IMPL< see [Lenat phd dissertation page pdf 55] for a detailed discussion of the algorithm >
   // IMPL< comments are numbered and named after the descriptions in Lenat's thesis >
   
