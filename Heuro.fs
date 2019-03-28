@@ -990,6 +990,72 @@ let fillDefaultTasks =
 (fillDefaultTasks)
 
 
+// tries to apply the task to a (host) concept
+let tryApplyTaskToConcept (task:Task) (hostConcept:Concept) =  
+  let heuristicInvocationCtx = new HeuristicInvocationCtx(task, hostConcept);
+  
+  // IMPL< we need to iterate over all "facets"(slots) to find the heuristics (and apply them)
+  for iItem in hostConcept.slots do
+    debug 7 (String.Format("   has item name={0}", iItem.name.[0]));
+
+    let iHeuristicConceptNames = iItem.heuristicNames; // IMPL< we need to retrieve the names of the heuristics >
+    
+    // fetch heuristics as described in [Lenat phd dissertation] [AM CASE pdf page 5]
+    for iHeuristicConceptName in iHeuristicConceptNames do
+      // retrieve heuristic concept
+
+      
+      printfn "[d ] found iHeuristicConceptName=%s of concept=%s" iHeuristicConceptName (retConceptName hostConcept);
+      
+      let heuristicConceptOpt: Concept option = (retConceptByName iHeuristicConceptName)
+      let mutable heuristicName = iHeuristicConceptName;
+      
+      let heuristicMaybe: Heuristic2 option = (retHeuristicByName heuristicName);
+
+      match heuristicMaybe with
+      | Some heuristic -> 
+        // iterate over applied concepts
+        // TODO< keep track of resource quota's >
+        for iAppliedConcept in concepts do
+          let invocationCtx = new HeuristicInvocationCtx(task, iAppliedConcept);
+          let heuristicFires = (checkLeftSide heuristic invocationCtx)
+
+          if heuristicFires then
+            printfn "[d5] heuristicConceptName=%s heuristic=%s FIRING!" iHeuristicConceptName heuristicName;
+            
+            let heuristicActionsNamesOpt: string[] option =
+              match heuristicConceptOpt with
+              | Some heuristicConcept ->
+                Some (conceptRetSlotOrNull heuristicConcept [|"heuristicActions"|] |> convStrVariantArrToStrArr);
+              | None ->
+                None
+
+            match heuristicActionsNamesOpt with
+            | Some heuristicActionsNames ->
+              printfn "[d5] found heuristicActions of heuristic name=%s" heuristicName;
+
+              // execute body of heuristic
+              for iHeuristicActionName in heuristicActionsNames do
+                let foundHeuristicAction, heuristicAction = heuristicActions.TryGetValue iHeuristicActionName;
+
+                if foundHeuristicAction then
+                  
+                  printfn "[d6]   invoke heuristicAction name=%s for concept=%s" iHeuristicActionName (retConceptName iAppliedConcept);
+
+                  (heuristicAction invocationCtx);
+                else
+                  printfn "[w6]   could not find heuristic action name=%s" iHeuristicActionName;
+
+            | None ->
+              printfn "[w ] couldn't retrieve heuristicActions of heuristic name=%s" heuristicName;
+
+        ()
+
+      | None ->
+        printfn "[w ] heuristicConcept=%s pointed at heuristic=%s which was not found!" iHeuristicConceptName heuristicName;
+
+      
+      ()
 
 // selects a task and processes it
 let selectTaskAndProcess =
@@ -1004,73 +1070,9 @@ let selectTaskAndProcess =
   // work on current task
   // IMPL< we need to iterate over all concepts >
   // MAYBE OPTIMIZATION< efficiency may get improved by caching it like described in [Lenat phd dissertation pdf page around 39] - but why should we do it when we are working with just a few tasks??? >
-  for iConcept in concepts do
-    debug 0 (String.Format("iterate over concept={0} for search for matching heuristics", retConceptName iConcept));
-
-    let heuristicInvocationCtx = new HeuristicInvocationCtx(currentTask, iConcept);
-    
-    // IMPL< we need to iterate over all "facets"(slots) to find the heuristics (and apply them)
-    for iItem in iConcept.slots do
-      debug 7 (String.Format("   has item name={0}", iItem.name.[0]));
-
-      let iHeuristicConceptNames = iItem.heuristicNames; // IMPL< we need to retrieve the names of the heuristics >
-      
-      // fetch heuristics as described in [Lenat phd dissertation] [AM CASE pdf page 5]
-      for iHeuristicConceptName in iHeuristicConceptNames do
-        // retrieve heuristic concept
-
-        
-        printfn "[d ] found iHeuristicConceptName=%s of concept=%s" iHeuristicConceptName (retConceptName iConcept);
-        
-        let heuristicConceptOpt: Concept option = (retConceptByName iHeuristicConceptName)
-        let mutable heuristicName = iHeuristicConceptName;
-        
-        let heuristicMaybe: Heuristic2 option = (retHeuristicByName heuristicName);
-
-        match heuristicMaybe with
-        | Some heuristic -> 
-          // iterate over applied concepts
-          // TODO< keep track of resource quota's >
-          for iAppliedConcept in concepts do
-            let invocationCtx = new HeuristicInvocationCtx(currentTask, iAppliedConcept);
-            let heuristicFires = (checkLeftSide heuristic invocationCtx)
-
-            if heuristicFires then
-              printfn "[d5] heuristicConceptName=%s heuristic=%s FIRING!" iHeuristicConceptName heuristicName;
-              
-              let heuristicActionsNamesOpt: string[] option =
-                match heuristicConceptOpt with
-                | Some heuristicConcept ->
-                  Some (conceptRetSlotOrNull heuristicConcept [|"heuristicActions"|] |> convStrVariantArrToStrArr);
-                | None ->
-                  None
-
-              match heuristicActionsNamesOpt with
-              | Some heuristicActionsNames ->
-                printfn "[d5] found heuristicActions of heuristic name=%s" heuristicName;
-
-                // execute body of heuristic
-                for iHeuristicActionName in heuristicActionsNames do
-                  let foundHeuristicAction, heuristicAction = heuristicActions.TryGetValue iHeuristicActionName;
-
-                  if foundHeuristicAction then
-                    
-                    printfn "[d6]   invoke heuristicAction name=%s for concept=%s" iHeuristicActionName (retConceptName iAppliedConcept);
-
-                    (heuristicAction invocationCtx);
-                  else
-                    printfn "[w6]   could not find heuristic action name=%s" iHeuristicActionName;
-
-              | None ->
-                printfn "[w ] couldn't retrieve heuristicActions of heuristic name=%s" heuristicName;
-
-          ()
-
-        | None ->
-          printfn "[w ] heuristicConcept=%s pointed at heuristic=%s which was not found!" iHeuristicConceptName heuristicName;
-
-        
-        ()
+  for iHostConcept in concepts do
+    debug 0 (String.Format("iterate over concept={0} for search for matching heuristics", retConceptName iHostConcept));
+    tryApplyTaskToConcept currentTask iHostConcept
 
   // we need to remove the task
   // see  [Lenat phd dissertation pdf page 39]
