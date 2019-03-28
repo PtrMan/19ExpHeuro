@@ -1,7 +1,6 @@
 
 
 
-
 // references
 // AM
 // [Lenat phd dissertation]    "AM: An artificial intelligence approach to discovery in mathematics as heuristic search"
@@ -14,6 +13,7 @@
 // [II]
 // [III]                       "Eurisko: A program that learns new heuristics and domain concepts: The nature of Heuristics III: Program design and results"
 
+module Heuro
 
 open System
 open System.Collections.Generic
@@ -1080,22 +1080,6 @@ let selectTaskAndProcess =
 
   // insert new tasks
   // TODO< >
-
-// main loop
-let mutable cycleCnt = 0L;
-let mutable forceTermination = false;
-while cycleCnt < 10L && not forceTermination do
-  printfn "cycle#=%i" cycleCnt
-  printfn "  stats  abstractCycle=%i" (-1L) // TODO< implement abstract cycles for measuring the computational resources >
-  printfn "  stats  tasks#=%i" (Array.length agenda.tasks)
-
-  if (Array.length agenda.tasks) = 0 then
-    forceTermination <- true;
-
-  if (Array.length agenda.tasks) > 0 then
-    (selectTaskAndProcess)
-
-  cycleCnt <- cycleCnt + 1L;
 
 
 
