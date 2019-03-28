@@ -41,6 +41,7 @@ type Symbl =
 | SymblName of string // name or something
 | SymblFn of string * Symbl list // function like "a(b, c)"
 | SymblBinary of Symbl * string * Symbl // binary relation like "a = b"
+| SymblProd of Symbl list // a product / array
 
 
 // IMPL TODO< refactor to type without a struct >
@@ -600,7 +601,9 @@ let fillLenatConcepts =
     new Slot([|"usefulness"|], fun a -> makeFloat 0.1); // 0.1 see [Lenat phd dissertation page pdf 198]
     new Slot([|strGen|], fun a -> makeString "Union");
 
-    new Slot([|"domain-range"|], fun a -> makeArr [| makeArr [|makeString "Sets";makeString "Sets";makeString "-->";makeString "Sets"|] |] );
+    new Slot([|"domain-range"|], fun a -> makeArr [|
+      makeSymbl (SymblBinary (SymblProd [SymblName "Sets"; SymblName "Sets"], "-->", SymblName "Sets"))
+      |]);
     new Slot([|"algorithms"|], fun a -> makeArr [| makeFn algorithm_union |] );
   |];
   concepts <- Array.append concepts [|new Concept(slots)|];
