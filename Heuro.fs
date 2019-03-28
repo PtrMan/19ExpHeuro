@@ -38,8 +38,8 @@ let calcUsefulness (reasonRating:float[]) (act:float) (facet:float) (concept:flo
 
 // Symbolic experession for symbolic descriptions and later Predicate Calculus etc
 type Symbl =
-| SymblAtom of string // name or something
-| SymblFn of string * Symbl[] // function like "a(b, c)"
+| SymblName of string // name or something
+| SymblFn of string * Symbl list // function like "a(b, c)"
 | SymblBinary of Symbl * string * Symbl // binary relation like "a = b"
 
 
@@ -605,10 +605,11 @@ let fillLenatConcepts =
   |];
   concepts <- Array.append concepts [|new Concept(slots)|];
   
-
-
   
-  (* commented because it is not touched by any functionality
+  let composeDefinitionDeclarativeSlowRightSide = SymblFn ("A", [SymblFn ("B", [SymblName "x"])]);
+  let composeDefinitionDeclarativeSlowSymbl = SymblBinary (SymblFn ("C", [SymblName "x"]), "=", composeDefinitionDeclarativeSlowRightSide);
+  let composeDefinitionDeclarativeSlow = makeSymbl composeDefinitionDeclarativeSlowSymbl;
+  
   slots <- [|
     new Slot([|"name"|], fun a -> makeString "Compose");
     new Slot([|"usefulness"|], fun a -> makeFloat 0.1);
@@ -617,13 +618,17 @@ let fillLenatConcepts =
     // definitions
     new Slot([|"definition"|], fun a -> makeArr [|
       // declarative slow 
-      makeArr[| makeStr "declarative"; makeStr "slow";
-        // C(x) = A(B(x))
-        makeArr[| makeStr"C"; makeStr"("; makeStr"x"; makeStr"="; makeStr "A"; makeStr "(" makeArr[| makeStr "B"; makeStr "("; makeStr "x" |] |]  |]);
+      makeArr[|
+        makeArr[|
+          makeString "declarative"; makeString "slow";
+          
+          // C(x) = A(B(x))
+          composeDefinitionDeclarativeSlow
+        |] |] |]);
   |];
   concepts <- Array.append concepts [|new Concept(slots)|];
-
-
+  
+  (*
 
   // see [Lenat phd dissertation page pdf 94]
   slots <- [|
@@ -675,7 +680,8 @@ let fillLenatConcepts =
   // TODO< list-insert [Lenat phd dissertation page pdf 115] >
   // TODO< list-intersect [Lenat phd dissertation page pdf 115] >
   // TODO< list-union [Lenat phd dissertation page pdf 115] >
-
+  
+  ()
 
 
 let fillCustomConcepts =
