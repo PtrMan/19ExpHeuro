@@ -695,21 +695,27 @@ let fillLenatConcepts =
   |];
   concepts <- Array.append concepts [|new Concept(slots)|];
    *)
+  
+  // see [Lenat phd dissertation page pdf 185]
+  // TODO< domain >
+  // TODO< definitions >
+  conceptsAdd {name="Compose"; usefulness=0.1} [
+    (strGen, makeString "Operation");
+    ("isa", makeString "Operation");]
 
-  // TODO< composition from [Lenat phd dissertation page pdf 115] >
-  // TODO< delete and delete-ops from [Lenat phd dissertation page pdf 115] >
-  // TODO< difference and difference-ops from [Lenat phd dissertation page pdf 115] >
-  // TODO< empty-structure [Lenat phd dissertation page pdf 115] >
-  // TODO< first-element [Lenat phd dissertation page pdf 115] >
-  // TODO< identity [Lenat phd dissertation page pdf 115] >
-  // TODO< insert [Lenat phd dissertation page pdf 115] >
-  // TODO< intersect [Lenat phd dissertation page pdf 115] >
-  // TODO< last-element [Lenat phd dissertation page pdf 115] >
-  // TODO< list-delete [Lenat phd dissertation page pdf 115] >
-  // TODO< list-diff [Lenat phd dissertation page pdf 115] >
-  // TODO< list-insert [Lenat phd dissertation page pdf 115] >
-  // TODO< list-intersect [Lenat phd dissertation page pdf 115] >
-  // TODO< list-union [Lenat phd dissertation page pdf 115] >
+  // TODO< delete and delete-ops from [Lenat phd dissertation page pdf ] >
+  // TODO< difference and difference-ops from [Lenat phd dissertation page pdf ] >
+  // TODO< empty-structure [Lenat phd dissertation page pdf ] >
+  // TODO< first-element [Lenat phd dissertation page pdf ] >
+  // TODO< identity [Lenat phd dissertation page pdf ] >
+  // TODO< insert [Lenat phd dissertation page pdf ] >
+  // TODO< intersect [Lenat phd dissertation page pdf ] >
+  // TODO< last-element [Lenat phd dissertation page pdf ] >
+  // TODO< list-delete [Lenat phd dissertation page pdf ] >
+  // TODO< list-diff [Lenat phd dissertation page pdf ] >
+  // TODO< list-insert [Lenat phd dissertation page pdf ] >
+  // TODO< list-intersect [Lenat phd dissertation page pdf ] >
+  // TODO< list-union [Lenat phd dissertation page pdf ] >
   
   ()
 
@@ -891,7 +897,7 @@ let fillLenatHeuristics =
     
     
     // add heuristic to concept
-    let conceptNameOfAddedHeuristic = "Composition";
+    let conceptNameOfAddedHeuristic = "Compose";
     match (retConceptByName conceptNameOfAddedHeuristic) with
     | Some c ->
       
