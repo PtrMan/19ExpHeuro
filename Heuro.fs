@@ -638,13 +638,14 @@ let fillLenatConcepts =
   let composeDefinitionDeclarativeSlowSymbl = SymblBinary (SymblFn ("C", [SymblName "x"]), "=", composeDefinitionDeclarativeSlowRightSide);
   let composeDefinitionDeclarativeSlow = makeSymbl composeDefinitionDeclarativeSlowSymbl;
   
-  slots <- [|
-    new Slot([|"name"|], fun a -> makeString "Compose");
-    new Slot([|"usefulness"|], fun a -> makeFloat 0.1);
-    new Slot([|strGen|], fun a -> makeString "Operation");
-    
-    // definitions
-    new Slot([|"definition"|], fun a -> makeArr [|
+  // see [Lenat phd dissertation page pdf 185]
+  // TODO< domain >
+  // TODO< remaining definitions >
+  conceptsAdd {name="Compose"; usefulness=0.1} [
+    (strGen, makeString "Operation");
+    ("isa", makeString "Operation");
+    ("definition", 
+      makeArr [|
       // declarative slow 
       makeArr[|
         makeArr[|
@@ -652,9 +653,9 @@ let fillLenatConcepts =
           
           // C(x) = A(B(x))
           composeDefinitionDeclarativeSlow
-        |] |] |]);
-  |];
-  concepts <- Array.append concepts [|new Concept(slots)|];
+        |] |] |]
+      )
+    ]
   
 
 
@@ -696,12 +697,7 @@ let fillLenatConcepts =
   concepts <- Array.append concepts [|new Concept(slots)|];
    *)
   
-  // see [Lenat phd dissertation page pdf 185]
-  // TODO< domain >
-  // TODO< definitions >
-  conceptsAdd {name="Compose"; usefulness=0.1} [
-    (strGen, makeString "Operation");
-    ("isa", makeString "Operation");]
+  
 
   // TODO< delete and delete-ops from [Lenat phd dissertation page pdf ] >
   // TODO< difference and difference-ops from [Lenat phd dissertation page pdf ] >
