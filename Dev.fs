@@ -23,7 +23,7 @@ let insertTestTasks =
 
 
 // bump interestingness so the heuristic processes the concept
-let conceptnameOfBumpedInterestingness = "";
+let conceptnameOfBumpedInterestingness = "Compose";
 updateConceptSlot conceptnameOfBumpedInterestingness [|"interestingness"|] (makeFloat 0.999);
 
 // let Heuro do it's magic

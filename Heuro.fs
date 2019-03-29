@@ -250,28 +250,39 @@ let conceptIsOperationWithSameDomainAndRange (concept:Concept) =
 
   // TODO< check if it isa Operation or if a generalization isa Operation >
   
-  let domainRange: Variant = conceptRetSlotOrNull concept [|"domain-range"|];
+  let domainRanges: Variant = conceptRetSlotOrNull concept [|"domain-range"|];
+  
+  
 
-  if domainRange.type_ = 6 then // IMPL< must be Symb* ! >
-    match domainRange.valSymbl with
-    | Some domainRange ->
-      match domainRange with
-      | SymblBinary (l, "-->", r) ->
-        match l with
-        | SymblProd lp ->
-          List.forall (fun a -> a = r) lp
+  let mutable idx = 0
+  let mutable res = false
+  while idx < (Array.length domainRanges.valArr) do
+    let iDomainRange = domainRanges.valArr.[idx];
+
+    if iDomainRange.type_ = 6 then // IMPL< must be Symb* ! >
+      match iDomainRange.valSymbl with
+      | Some domainRange ->
+        match domainRange with
+        | SymblBinary (l, "-->", r) ->
+          match l with
+          | SymblProd lp ->
+            res <- List.forall (fun a -> a = r) lp
+          | _ ->
+            warning 0 (String.Format ("conceptIsOperationWithSameDomainAndRange() called for concept={0} which had invalid symbolic description!", conceptName));
+            //false
         | _ ->
           warning 0 (String.Format ("conceptIsOperationWithSameDomainAndRange() called for concept={0} which had invalid symbolic description!", conceptName));
-          false
+          //false
       | _ ->
-        warning 0 (String.Format ("conceptIsOperationWithSameDomainAndRange() called for concept={0} which had invalid symbolic description!", conceptName));
-        false
-    | _ ->
-      warning 0 (String.Format ("conceptIsOperationWithSameDomainAndRange() called for concept={0} which had no 'domain-range'!", conceptName));
-      false
-  else
-    warning 0 (String.Format ("conceptIsOperationWithSameDomainAndRange() called for concept={0} which had no !", conceptName));
-    false
+        warning 0 (String.Format ("conceptIsOperationWithSameDomainAndRange() called for concept={0} which had no 'domain-range'!", conceptName));
+        //false
+    else
+      warning 0 (String.Format ("conceptIsOperationWithSameDomainAndRange() called for concept={0} which had no valid range!", conceptName));
+      //false
+
+    idx <- idx + 1
+  
+  res
 
 
 
@@ -497,23 +508,6 @@ let conceptAppendHeuristicName (conceptName:string) (slotName:string) (addedHeur
     ()
 
 
-//////////////////////
-/// algorithms for calling by the AI
-
-let algorithm_union (args:Variant[]): Variant =
-  let mutable resArr:Variant[] = [||];
-  
-  // TODO< implement fully >
-  let isAlreadyInResult (checked:Variant) =
-    false
-
-  for iArg in args do
-    // IMPL NOTE< arguments must be arrays! >
-    for iiArg in iArg.valArr do
-      if not (isAlreadyInResult iiArg) then
-        resArr <- Array.append resArr [|iiArg|]
-
-  makeArr resArr
 
 
 
@@ -535,7 +529,7 @@ let conceptsAdd (info:AddConceptInfo) (fields: (string * Variant) list) =
 
 //////////////////////
 /// fill concepts with hardcoded concepts from [Lenat phd dissertation]
-let fillLenatConcepts =
+let fillLenatConcepts () =
   let mutable slots: Slot[] = [||];
   
   // is important! see [Lenat phd dissertation page pdf 138] for justification
@@ -626,7 +620,7 @@ let fillLenatConcepts =
     new Slot([|"domain-range"|], fun a -> makeArr [|
       makeSymbl (SymblBinary (SymblProd [SymblName "Sets"; SymblName "Sets"], "-->", SymblName "Sets"))
       |]);
-    new Slot([|"algorithms"|], fun a -> makeArr [| makeFn algorithm_union |] );
+    new Slot([|"algorithms"|], fun a -> makeArr [| (*makeFn algorithm_union  --- is commented because we remove this function for this algorithm! *) |] );
   |];
   concepts <- Array.append concepts [|new Concept(slots)|];
   
@@ -639,11 +633,13 @@ let fillLenatConcepts =
   let composeDefinitionDeclarativeSlow = makeSymbl composeDefinitionDeclarativeSlowSymbl;
   
   // see [Lenat phd dissertation page pdf 185]
-  // TODO< domain >
+  // TODO< remaining domains >
   // TODO< remaining definitions >
   conceptsAdd {name="Compose"; usefulness=0.1} [
     (strGen, makeString "Operation");
     ("isa", makeString "Operation");
+    ("domain-range", makeArr [|
+      makeSymbl (SymblBinary (SymblProd [SymblName "Active"; SymblName "Active"],"-->",SymblName "Active"))|]);
     ("definition", 
       makeArr [|
       // declarative slow 
@@ -716,7 +712,7 @@ let fillLenatConcepts =
   ()
 
 
-let fillCustomConcepts =
+let fillCustomConcepts () =
   let mutable slots: Slot[] = [||];
   
   // concept from which all heuristics specialize
@@ -750,8 +746,8 @@ let fillCustomConcepts =
 let heuristicActions :Dictionary<string, HeuristicInvocationCtx->unit> = new Dictionary<string, HeuristicInvocationCtx->unit>()
 
 
-let fillLenatHeuristics =
-  let fillHeuristicSuggestAction =
+let fillLenatHeuristics () =
+  let fillHeuristicSuggestAction () =
     // if there are no examples for concept C filled in so far,
     // THEN 
     // consider the task "Fillin examples of C", 
@@ -808,7 +804,7 @@ let fillLenatHeuristics =
     | None -> 
       printfn "[w ] couldn't find concept=%s" "Any-concept";
   
-  (fillHeuristicSuggestAction)
+  (fillHeuristicSuggestAction ())
   
 
 
@@ -820,7 +816,7 @@ let fillLenatHeuristics =
 
 
 
-  let fillHeuristic185 =
+  let fillHeuristic185 () =
     // 185. 
     // Given an interesting operation F:An..A,
     //
@@ -835,11 +831,13 @@ let fillLenatHeuristics =
       if false then
         false // composition already exists
       else
-        printfn "HERE505";
+        debug 7 (conceptRetSlotOrNull invocationCtx.concept [|"name"|]).valString
 
-        true &&
-          (conceptRetSlotOrNull invocationCtx.concept [|"interestingness"|]).valFloat >= interestingThreshold &&
-          (conceptIsOperationWithSameDomainAndRange invocationCtx.concept)
+        let isInterestingEnough = (conceptRetSlotOrNull invocationCtx.concept [|"interestingness"|]).valFloat >= interestingThreshold
+        let isOperationWithSameDomainAndRange = conceptIsOperationWithSameDomainAndRange invocationCtx.concept
+        printfn "[d ] isInterestingEnough=%b, isOperationWithSameDomainAndRange=%b" isInterestingEnough isOperationWithSameDomainAndRange
+
+        isInterestingEnough && isOperationWithSameDomainAndRange
 
     // heuristic to suggest new tasks which may be plausible at the current time
     
@@ -851,17 +849,13 @@ let fillLenatHeuristics =
 
         let generalization = (conceptRetSlotOrNull a [|strGen|]); // generalization of source concept which is a function
         assert_ (not (isNull generalization)) "H185 generalization was null!";
-
-        let slots =
-          [|
-          new Slot([|"name"|], fun a -> makeString (nameOfConcept + " o " + nameOfConcept) );
-          new Slot([|"usefulness"|], fun a -> (makeFloat 0.1));
-          new Slot([|strGen|], fun a -> generalization);
+        
+        conceptsAdd {name=nameOfConcept + " o " + nameOfConcept; usefulness=0.1} [
+          (strGen, generalization)
           // TODO< field for definition which we compose out of the definition of the source concept(s) >
           // TODO< other fields >
-          |];
-        concepts <- Array.append concepts [|new Concept(slots)|];
-
+            ]
+        
         ()
 
       let nameOfConcept = (retConceptName invocationCtx.concept);
@@ -869,7 +863,6 @@ let fillLenatHeuristics =
       debug 0 (String.Format ("Heuristic185 called for concept={0}!", nameOfConcept));
 
       // TODO< fully implement this heuristic >
-
       // TODO< call composeFunctionAndCreateConceptIfNecessary() for other compositions - see  >
       composeFunctionAndCreateConceptIfPossible invocationCtx.concept invocationCtx.concept; // just compose with itself
     
@@ -904,16 +897,7 @@ let fillLenatHeuristics =
       warning 0 (String.Format ("couldn't find concept={0}", conceptNameOfAddedHeuristic))
 
 
-  (fillHeuristic185)
-
-
-
-
-
-
-
-
-
+  (fillHeuristic185 ())
 
   ()
 
@@ -936,14 +920,12 @@ let fillDefaultTasks () =
 
 
 // fill concepts with hardcoded concepts!
-(fillLenatConcepts) // concepts from AM as defined by Lenat
-(fillCustomConcepts) // custom concepts
+(fillLenatConcepts ()) // concepts from AM as defined by Lenat
+(fillCustomConcepts ()) // custom concepts
 
 // fill heuristis with hardcoded heuristics
-(fillLenatHeuristics)
+(fillLenatHeuristics ())
 
-// fill start tasks
-//(fillDefaultTasks ())
 
 
 // tries to apply the task to a (host) concept
@@ -1178,6 +1160,8 @@ let heuristicBodyD55 () =
 
 
 
+//////////////////////
+/// algorithms for calling by the AI
 
 // can behave as union or append of list
 let fuse (isSet:bool) (a:Variant[]) (b:Variant[]): Variant[] =
