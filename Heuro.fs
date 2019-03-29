@@ -64,6 +64,11 @@ type Variant =
 | VariantFn of (Variant[]->Variant)
 | VariantSymbl of Symbl // used to communicate with Symbols
 
+let isVariantSymbl (v:Variant): bool =
+  match v with
+  | VariantSymbl _ ->  true
+  | _ -> false
+
 let checkVariantSameType (a:Variant) (b:Variant): bool =
   match a with
   | VariantNull ->
@@ -159,6 +164,11 @@ let isNull (var:Variant) =
   | VariantNull -> true
   | _ -> false
 
+let isSymbl (var:Variant) =
+  match var with
+  | VariantSymbl _ -> true
+  | _ -> false
+
 // return array of variant or default array which is empty array
 let retVariantArrOrDefault (var:Variant): Variant[] =
   match var with
@@ -228,14 +238,14 @@ let warning (verbosity:int) (msg:string) =
   if verbosity <= warningVerbosity then
     printfn "[w%s] %s" levelAsString msg
 
-let error (msg:string) =
+let fatal (msg:string) =
   printfn "[fatal] %s" msg
   exit 1
   ()
 
 let assert_ (b:bool) (msg:string) =
   if not b then
-    error (String.Format ("assertation failed! msg={0}", msg))
+    fatal (String.Format ("assertation failed! msg={0}", msg))
 
 
 
@@ -627,18 +637,18 @@ let fillLenatConcepts () =
 
   
   // see [Lenat phd dissertation page pdf 113]
-  conceptsAdd {name=SymblName "Any-concept"; usefulness=0.5} [(strGen, makeString "Anything")]
+  conceptsAdd {name=SymblName "Any-concept"; usefulness=0.5} [(strGen, makeSymbl (SymblName "Anything"))]
   
   // see [Lenat phd dissertation page pdf 113]
-  conceptsAdd {name=SymblName "Object"; usefulness=0.5} [(strGen, makeString "Any-concept")]
+  conceptsAdd {name=SymblName "Object"; usefulness=0.5} [(strGen, makeSymbl (SymblName "Any-concept"))]
   
   // see [Lenat phd dissertation page pdf 113]
   // "Structure" means data-structure here!
-  conceptsAdd {name=SymblName "Structure"; usefulness=0.5} [(strGen, makeString "Object")]
+  conceptsAdd {name=SymblName "Structure"; usefulness=0.5} [(strGen, makeSymbl (SymblName "Object"))]
 
   // see [Lenat phd dissertation page pdf 113]
-  conceptsAdd {name=SymblName "Ordered"; usefulness=0.5} [(strGen, makeString "Structure")]
-  conceptsAdd {name=SymblName "Unordered"; usefulness=0.5} [(strGen, makeString "Structure")]
+  conceptsAdd {name=SymblName "Ordered"; usefulness=0.5} [(strGen, makeSymbl (SymblName "Structure"))]
+  conceptsAdd {name=SymblName "Unordered"; usefulness=0.5} [(strGen, makeSymbl (SymblName "Structure"))]
   
   conceptsAdd {name=SymblName "Numbers"; usefulness=0.5} []
 
@@ -646,26 +656,26 @@ let fillLenatConcepts () =
   // "Activity represents something that can be performed"
   //   [Lenat phd dissertation page pdf 114]
   //   definition [Lenat phd dissertation page pdf 182]
-  conceptsAdd {name=SymblName "Active"; usefulness=0.5} [(strGen, makeString "Any-concept")]
+  conceptsAdd {name=SymblName "Active"; usefulness=0.5} [(strGen, makeSymbl (SymblName "Any-concept"))]
 
   // see [Lenat phd dissertation page pdf 113]
-  conceptsAdd {name=SymblName "Operation"; usefulness=0.5} [(strGen, makeString "Active")]
+  conceptsAdd {name=SymblName "Operation"; usefulness=0.5} [(strGen, makeSymbl (SymblName "Active"))]
   
-  conceptsAdd {name=SymblName "Predicate"; usefulness=0.5} [(strGen, makeString "Active")]
+  conceptsAdd {name=SymblName "Predicate"; usefulness=0.5} [(strGen, makeSymbl (SymblName "Active"))]
   
   // see [Lenat phd dissertation page pdf 183]
   conceptsAdd {name=SymblName "Constant-Predicate"; usefulness=0.1} [
     ("isa", makeArr [|makeSymbl (SymblName "Predicate")|]);
     // TODO< create elipsis for domain !!! >
     ("domain-range", makeArr[|makeSymbl (SymblBinary (SymblName "Anything", "-->", SymblProd [SymblName "T";SymblName "F"]))|]);
-    (strSpec, makeArr [|makeString "Constant-True"; makeString "Constant-False"|])
+    (strSpec, makeArr [|makeSymbl (SymblName "Constant-True"); makeSymbl (SymblName "Constant-False")|])
     ("what", makeString "a predicate which always returns the same logical value")]
   
   // see [Lenat phd dissertation page pdf 183]
   // see [Lenat phd dissertation page pdf 184]
   for binaryTruthName, binaryTruthValue in [("True", SymblName "T");("False", SymblName "F")] do
     conceptsAdd {name=SymblName ("Constant-" + binaryTruthName); usefulness=0.1} [
-      (strGen, makeString "Constant-Predicate");
+      (strGen, makeSymbl (SymblName "Constant-Predicate"));
       // TODO< create elipsis for domain !!! >
       ("definition", makeArr [|makeArr[|makeString "nonrecursive"; makeString "very-quick"; makeSymbl (binaryTruthValue)|]|]);
       ("what", makeString ("a predicate which always returns" + binaryTruthName))]
@@ -678,7 +688,7 @@ let fillLenatConcepts () =
   slots <- [|
     new Slot([|"name"|], fun a -> makeSymbl (SymblName "Atom-obj"));
     new Slot([|"usefulness"|], fun a -> makeFloat 0.1);
-    new Slot([|strGen|], fun a -> makeString "Object");
+    new Slot([|strGen|], fun a -> makeSymbl (SymblName "Object"));
   |];
   concepts <- Array.append concepts [|new Concept(slots)|];
 
@@ -686,7 +696,7 @@ let fillLenatConcepts () =
   slots <- [|
     new Slot([|"name"|], fun a -> makeSymbl (SymblName "BooleanTruth-Value"));
     new Slot([|"usefulness"|], fun a -> makeFloat 0.1);
-    new Slot([|strGen|], fun a -> makeString "Atom-obj");
+    new Slot([|strGen|], fun a -> makeSymbl (SymblName "Atom-obj"));
   |];
   concepts <- Array.append concepts [|new Concept(slots)|];
 
@@ -694,7 +704,7 @@ let fillLenatConcepts () =
   slots <- [|
     new Slot([|"name"|], fun a -> makeSymbl (SymblName "Lists"));
     new Slot([|"usefulness"|], fun a -> makeFloat 0.5);
-    new Slot([|strGen|], fun a -> makeString "Ordered");
+    new Slot([|strGen|], fun a -> makeSymbl (SymblName "Ordered"));
   |];
   concepts <- Array.append concepts [|new Concept(slots)|];
 
@@ -702,7 +712,7 @@ let fillLenatConcepts () =
   slots <- [|
     new Slot([|"name"|], fun a -> makeSymbl (SymblName "Sets"));
     new Slot([|"usefulness"|], fun a -> makeFloat 0.5);
-    new Slot([|strGen|], fun a -> makeString "Unordered");
+    new Slot([|strGen|], fun a -> makeSymbl (SymblName "Unordered"));
   |];
   concepts <- Array.append concepts [|new Concept(slots)|];
   
@@ -711,7 +721,7 @@ let fillLenatConcepts () =
     new Slot([|"name"|], fun a -> makeSymbl (SymblName "Union"));
     new Slot([|"usefulness"|], fun a -> makeFloat 0.1); // 0.1 see [Lenat phd dissertation page pdf 196]
     
-    new Slot([|"isa"|], fun a -> makeString "Operation");
+    new Slot([|"isa"|], fun a -> makeArr [| makeSymbl (SymblName "Operation") |] );
 
     // TODO< rewrite domain and range to use of Syml* structure family >
     new Slot([|"domain-range"|], fun a -> makeArr[| makeArr [|makeString "Structures";makeString "Structures";makeString "-->";makeString "Structures"|] |] );
@@ -744,7 +754,7 @@ let fillLenatConcepts () =
   // TODO< remaining definitions >
   conceptsAdd {name=SymblName "Compose"; usefulness=0.1} [
     (strGen,  makeSymbl (SymblName "Operation"));
-    ("isa",  makeSymbl (SymblName "Operation"));
+    ("isa",  makeArr [| makeSymbl (SymblName "Operation")|]);
     ("domain-range", makeArr [|
       makeSymbl (SymblBinary (SymblProd [SymblName "Active"; SymblName "Active"],"-->",SymblName "Active"));
       makeSymbl (SymblBinary (SymblProd [SymblName "Operation"; SymblName "Active"],"-->",SymblName "Operation"));
@@ -847,7 +857,7 @@ let fillCustomConcepts () =
     new Slot([|"name"|], fun a -> makeSymbl (SymblName "Integer"));
     new Slot([|"usefulness"|], fun a -> makeFloat 0.999);
     new Slot([|"usefulnessIsFrozen"|], fun a -> makeLong 1L); // freeze usefulness 
-    new Slot([|strGen|], fun a -> makeString "Atom-obj");
+    new Slot([|strGen|], fun a -> makeSymbl (SymblName "Atom-obj"));
   |];
   concepts <- Array.append concepts [|new Concept(slots)|];
 
@@ -897,7 +907,7 @@ let fillLenatHeuristics () =
       new Slot([|"usefulness"|], fun a -> (makeFloat 0.75));
       new Slot([|"heuristicActions"|], fun a -> (makeArr [|makeString "heuristicSuggestTasksAction"|])); // IMPL< register action for heuristic >
       new Slot([|strGen|], fun a -> makeSymbl (SymblName "Heuristic")); // "is a" relationship
-      new Slot([|"isa"|], fun a -> makeSymbl (SymblName "Heuristic"));
+      new Slot([|"isa"|], fun a -> makeArr [| makeSymbl (SymblName "Heuristic")|]);
       |];
     concepts <- Array.append concepts [|new Concept(slots)|];
     
@@ -992,7 +1002,7 @@ let fillLenatHeuristics () =
       new Slot([|"usefulness"|], fun a -> (makeFloat 0.75));
       new Slot([|"heuristicActions"|], fun a -> (makeArr [|makeString "heuristic185SuggestAction"|])); // IMPL< register action for heuristic >
       new Slot([|strGen|], fun a ->  makeSymbl (SymblName "Heuristic")); // "is a" relationship
-      new Slot([|"isa"|], fun a -> makeSymbl (SymblName "Heuristic"));
+      new Slot([|"isa"|], fun a -> makeArr [| makeSymbl (SymblName "Heuristic")|]);
       |];
     concepts <- Array.append concepts [|new Concept(slots)|];
     
@@ -1038,11 +1048,43 @@ let fillDefaultTasks () =
 // fill heuristis with hardcoded heuristics
 (fillLenatHeuristics ())
 
+
+// checks the predicate for a slot for all predicates
+// terminates the program with fatal if the test failed
+let conceptsCheckOptAllItems (slotPath:string[]) (checkFn:Variant->bool) =
+  for iConcept in concepts do
+    if not (conceptRetSlotOrNull iConcept slotPath |> checkFn) then
+      let hr_conceptName = (retConceptName iConcept |> convSymblToStrRec)
+      fatal (String.Format ("check of slot={0} for all concepts failed for concept={1}!", slotPath |> Seq.fold (+) ".", hr_conceptName))
+
+
+
+
+
+
+let _checkSingleIsa (v:Variant): bool =
+    // IMPL NOTE< we don't need to check if it points to an existing concept - because the concept may have been forgotten. In that case the other code should just ignore this relationship! >
+    isVariantSymbl v
+
+let _checkSingleSpecialization (v:Variant): bool =
+    // IMPL NOTE< we don't need to check if it points to an existing concept - because the concept may have been forgotten. In that case the other code should just ignore this relationship! >
+    isVariantSymbl v
+
+// helper for checking if isa is correct
+let _checkVariantArray (slotValue:Variant) (checkPredicate:Variant->bool): bool =
+  match slotValue with
+  | VariantArr arr ->
+    Array.map checkPredicate arr |> Seq.fold (&&) true // IMPL< isSingleIsa must be true for all entries >
+  | _ ->
+    false // must be an array
+
 // run checks on concepts
-// TODO (conceptsCheckOptAllItems "name" (fun value -> isSymbl value)) // check for name is a Symbl
-// TODO (conceptsCheckOptAllItems "isa" (fun value -> isSymbl value)) // check for isa is a Symbl
-// TODO (conceptsCheckOptAllItems strGen (fun value -> isSymbl value)) // check for generalization is a Symbl
-// TODO (conceptsCheckExistSlot "usefullness") // make sure that every concept has a "usefullness" slot
+(conceptsCheckOptAllItems [|"name"|] (fun value -> isSymbl value)) // check for name is a Symbl
+(conceptsCheckOptAllItems [|"isa"|] (fun value -> isNull value || _checkVariantArray value _checkSingleIsa)) // check for isa is a Symbl
+(conceptsCheckOptAllItems [|strGen|] (fun value -> isNull value || isSymbl value)) // check for generalization is a Symbl
+(conceptsCheckOptAllItems [|strSpec|] (fun value -> isNull value || _checkVariantArray value _checkSingleSpecialization)) 
+
+// TODO (conceptsCheckExistSlot [|"usefullness"|]) // make sure that every concept has a "usefullness" slot
 
 
 // tries to apply the task to a (host) concept
