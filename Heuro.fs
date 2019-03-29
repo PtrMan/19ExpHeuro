@@ -18,9 +18,8 @@ module Heuro
 open System
 open System.Collections.Generic
 
-
-
-
+// clamp value to range
+let clamp min_ max_ value = max min_ value |> min max_
 
 // helper to return the path as a dot
 let convPath (path:string[]) =
@@ -32,7 +31,7 @@ let dist (arr:float[]) = Array.map2 (*) arr arr |> Array.sum |> sqrt
 // computes the usefulness "Worth" of a overall task
 // [Lenat phd dissertation page pdf 47]
 // TODO< use for usefulness / "Worth" computation of task >
-let calcUsefulness (reasonRating:float[]) (act:float) (facet:float) (concept:float) =
+let calcTaskUsefulness (reasonRating:float[]) (act:float) (facet:float) (concept:float) =
   (dist reasonRating) * (0.2*act + 0.3*facet + 0.5*concept)
 
 
@@ -43,70 +42,152 @@ type Symbl =
 | SymblBinary of Symbl * string * Symbl // binary relation like "a = b"
 | SymblProd of Symbl list // a product / array
 
+// convert symbol to string
+let rec convSymblToStrRec (s:Symbl): string =
+  match s with
+  | SymblName name -> name
+  | SymblFn (name, args) -> // function like "a(b, c)"
+    let stringOfArgs = List.map convSymblToStrRec args |> Seq.fold (+) ","
+    name + "(" + stringOfArgs + ")"
+  | SymblBinary (l, rel, r) ->
+    (convSymblToStrRec l) + " " + rel + " " + (convSymblToStrRec r)
+  | SymblProd args -> // a product / array
+    let stringOfArgs = List.map convSymblToStrRec args |> Seq.fold (+) ","
+    "(" + stringOfArgs + ")"
 
-// IMPL TODO< refactor to type without a struct >
-type Variant = struct
-  val type_: int // datatype : 0 : null, 1: string, 2: array, 3: long, 4: float, 5: function, 6: Symbl
-  val mutable valInt: int64
-  val mutable valString: string
-  val mutable valFloat: float
-  val mutable valArr: Variant[]
-  
-  // used to pass functions around and call them dynamically with any arguments
-  val mutable valFn: (Variant[]->Variant) option
-  
-  val mutable valSymbl: Symbl option
+type Variant =
+| VariantNull // null value - used for not setted or not returned values
+| VariantInt of int64
+| VariantString of string
+| VariantFloat of float
+| VariantArr of Variant[]
+| VariantFn of (Variant[]->Variant)
+| VariantSymbl of Symbl // used to communicate with Symbols
 
-  new (type__) =
-      {type_ = type__; valInt=0L; valString=""; valFloat=0.0; valArr=[||]; valFn=None; valSymbl=None;}
-end
+let checkVariantSameType (a:Variant) (b:Variant): bool =
+  match a with
+  | VariantNull ->
+    match b with
+    | VariantNull -> true
+    | _ -> false
+  | VariantInt _ ->
+    match b with
+    | VariantInt _ -> true
+    | _ -> false
+  | VariantString _ ->
+    match b with
+    | VariantString _ -> true
+    | _ -> false
+  | VariantFloat _ ->
+    match b with
+    | VariantFloat _ -> true
+    | _ -> false
+  | VariantArr _ ->
+    match b with
+    | VariantArr _ -> true
+    | _ -> false
+  | VariantFn _ ->
+    match b with
+    | VariantFn _ -> true
+    | _ -> false
+  | VariantSymbl _ ->
+    match b with
+    | VariantSymbl _ -> true
+    | _ -> false
+
+let rec checkVariantEq (a:Variant) (b:Variant) =
+  if not (checkVariantSameType a b) then
+    false
+  else
+    match a with
+    | VariantNull -> true // null is always equal
+    | VariantString aStr ->
+      match b with
+      | VariantString bStr -> aStr = bStr
+      | _ -> false
+    | VariantInt aInt ->
+      match b with
+      | VariantInt bInt -> aInt = bInt
+      | _ -> false
+    | VariantFloat aVal ->
+      match b with
+      | VariantFloat bVal -> aVal = bVal // IMPL TODO< we should really check if the absolute difference is in range >
+      | _ -> false
+    | VariantFn _ -> false // can't compare functions
+    | VariantArr aArr -> // array
+      match b with
+      | VariantArr bArr ->
+
+        if (Array.length aArr) = (Array.length bArr) then
+          let mutable idx = 0;
+          let mutable res = true;
+          while idx < (Array.length aArr) do
+            res <- res && (checkVariantEq (aArr.[idx]) (bArr.[idx]));
+            idx <- idx + 1;
+          res
+        else
+          false
 
 let makeSymbl (value: Symbl) =
-  let mutable res = new Variant(6);
-  res.valSymbl <- Some value;
-  res
+  VariantSymbl value
 
 let makeString (value: string) =
-  let mutable res = new Variant(1);
-  res.valString <- value;
-  res
+  VariantString value
 
 let makeNull =
-  new Variant(0)
+  VariantNull
 
 let makeLong (value: int64) = 
-  let mutable res = new Variant(3);
-  res.valInt <- value;
-  res
+  VariantInt value
 
 let makeFloat (value: float) = 
-  let mutable res = new Variant(4);
-  res.valFloat <- value;
-  res
+  VariantFloat value
 
 let makeArr (content: Variant[]) =
-  let mutable res = new Variant(2);
-  res.valArr <- content;
-  res
+  VariantArr content
 
 let makeFn (fn_ : Variant[]->Variant) =
-  let mutable res = new Variant(5);
-  res.valFn <- Some fn_;
-  res
+  VariantFn fn_
 
-let isArr (var:Variant) = var.type_ = 2
-let isNull (var:Variant) = var.type_ = 0
+let isArr (var:Variant) =
+  match var with
+  | VariantArr _ -> true
+  | _ -> false
+
+let isNull (var:Variant) =
+  match var with
+  | VariantNull -> true
+  | _ -> false
+
+// return array of variant or default array which is empty array
+let retVariantArrOrDefault (var:Variant): Variant[] =
+  match var with
+  | VariantArr arr -> arr
+  | _ -> [||]
+
+// interprets the Variant as a string and returns it, returns empty string if it is not a string
+let retVariantStringOrDefault (var:Variant): string =
+  match var with
+  | VariantString str -> str
+  | _ -> ""
+
+let retVariantRealOrDefault (var:Variant): float =
+  match var with
+  | VariantFloat value -> value
+  | _ -> 0.0
 
 // convert string variant array to native string array
 let convStrVariantArrToStrArr (v:Variant): string[] =
-  if v.type_ = 2 then // IMPL< check for array >
+  match v with
+  | VariantArr vArr ->
     let mutable arr:string[] = [||]
-    for i in v.valArr do
-      if i.type_ = 1 then // IMPL< check for string >
-        arr <- Array.append arr [|i.valString|];
+    for i in vArr do
+      match i with
+      | VariantString valString -> // IMPL< check for string >
+        arr <- Array.append arr [|valString|];
+      | _ -> ()
     arr
-  else
-    [||]
+  | _ -> [||]
 
 
 
@@ -120,6 +201,8 @@ let mutable debugVerbosity = 10;
 // best is to keep it that high to enable all warnings
 let mutable warningVerbosity = 100;
 
+let mutable infoVerbosity = 100;
+
 let debug (verbosity:int) (msg:string) =
   let levelAsString = match verbosity with
   | 0 -> " "
@@ -127,6 +210,15 @@ let debug (verbosity:int) (msg:string) =
   
   if verbosity <= debugVerbosity then
     printfn "[d%s] %s" levelAsString msg
+
+
+let info (verbosity:int) (msg:string) =
+  let levelAsString = match verbosity with
+  | 0 -> " "
+  | _ -> (string)verbosity
+  
+  if verbosity <= infoVerbosity then
+    printfn "[i%s] %s" levelAsString msg
 
 let warning (verbosity:int) (msg:string) =
   let levelAsString = match verbosity with
@@ -169,7 +261,7 @@ type Slot = struct
   // TODO LATER< generalize with some PLL like language >  
   // heuristics are "tacked" to slots, as described in Lenat's dissertation physical page 55
   // heuristics have their own concepts like in EURISKO [EURISKO Micro pdf page 7]
-  val mutable heuristicNames: string[]
+  val mutable heuristicNames: Symbl[]
 
   new (name_, value_) =
     {name=name_;value=value_;getCounter=0L;getCounterHistory=[||];heuristicNames=[||];}
@@ -209,17 +301,16 @@ let slotHas (slots: Slot[]) (name: string[]) =
   has
 
 
-
-
 // helper to change the usefulness of a concept by slots
 let changeUsefulness (slots: Slot[]) (delta:float) =
-  let mutable usefulness = (slotGet slots [|"usefulness"|] "").valFloat;
-  usefulness <- usefulness + delta;
-  usefulness <- min usefulness 1.0;
-  usefulness <- max usefulness 0.0;
-  slotPut slots [|"usefulness"|] "" (makeFloat usefulness);
-
-
+  match (slotGet slots [|"usefulness"|] "") with
+  | VariantFloat valUsefulness ->
+    let usefulness = valUsefulness + delta |> clamp 0.0 1.0
+    slotPut slots [|"usefulness"|] "" (makeFloat usefulness)
+    ()
+  | _ ->
+    warning 0 "tried to change item=usefullness which is not existing!"
+    ()
 
 
 
@@ -231,9 +322,13 @@ type Concept = struct
 end
 
 // helper to return the name of a concept
-let retConceptName (concept:Concept) =
+let retConceptName (concept:Concept): Symbl =
   // TODO< check for correct type (must be string)
-  (slotGet concept.slots [|"name"|] "").valString
+  match (slotGet concept.slots [|"name"|] "") with
+  | VariantSymbl name -> name
+  | _ ->
+    warning 0 "concept has no name!!!" // IMPl< should this be fatal? >
+    SymblName ""
 
 // return the value of the slot or a invariant null
 let conceptRetSlotOrNull (concept:Concept) (slotAdress:string[]): Variant = 
@@ -256,29 +351,22 @@ let conceptIsOperationWithSameDomainAndRange (concept:Concept) =
 
   let mutable idx = 0
   let mutable res = false
-  while idx < (Array.length domainRanges.valArr) do
-    let iDomainRange = domainRanges.valArr.[idx];
-
-    if iDomainRange.type_ = 6 then // IMPL< must be Symb* ! >
-      match iDomainRange.valSymbl with
-      | Some domainRange ->
-        match domainRange with
-        | SymblBinary (l, "-->", r) ->
-          match l with
-          | SymblProd lp ->
-            res <- List.forall (fun a -> a = r) lp
-          | _ ->
-            warning 0 (String.Format ("conceptIsOperationWithSameDomainAndRange() called for concept={0} which had invalid symbolic description!", conceptName));
-            //false
+  while idx < (retVariantArrOrDefault domainRanges |> Array.length) do
+    let iDomainRange: Variant = (retVariantArrOrDefault domainRanges).[idx];
+    
+    match iDomainRange with
+    | VariantSymbl domainRange -> // IMPL< must be Symb* ! >
+      match domainRange with
+      | SymblBinary (l, "-->", r) ->
+        match l with
+        | SymblProd lp ->
+          res <- List.forall (fun a -> a = r) lp
         | _ ->
           warning 0 (String.Format ("conceptIsOperationWithSameDomainAndRange() called for concept={0} which had invalid symbolic description!", conceptName));
-          //false
       | _ ->
-        warning 0 (String.Format ("conceptIsOperationWithSameDomainAndRange() called for concept={0} which had no 'domain-range'!", conceptName));
-        //false
-    else
+        warning 0 (String.Format ("conceptIsOperationWithSameDomainAndRange() called for concept={0} which had invalid symbolic description!", conceptName));
+    | _ ->
       warning 0 (String.Format ("conceptIsOperationWithSameDomainAndRange() called for concept={0} which had no valid range!", conceptName));
-      //false
 
     idx <- idx + 1
   
@@ -300,7 +388,7 @@ type Task = struct
 
   val mutable name_hr: string // human readable name, can be empty if generated by machine
   
-  val mutable manipulatedConceptName: string // name of the manipulated concept
+  val mutable manipulatedConceptName: Symbl // name of the manipulated concept
   val mutable facetName: string // name of the "facet"/item which is touched
   val mutable taskType: string // currently only support "fillin"
 
@@ -319,7 +407,7 @@ type Task = struct
     id=id_;
     priority=initialPriority;
     name_hr="";
-    manipulatedConceptName="";
+    manipulatedConceptName=SymblName "";
     facetName="";
     taskType="";
     reasons=[||];}
@@ -426,7 +514,7 @@ end
 // is pointed at by heuristics which are saved as concepts just like in EURISKO
 // see [Lenat phd dissertation page pdf 42] for the treatment in AM
 type Heuristic2 = struct 
-  val name: string
+  val name: Symbl
   val leftSide: (HeuristicInvocationCtx->bool)[] // preconditions
                                                  // first is special in AM but we abstracted the "specialness" away
   
@@ -440,7 +528,7 @@ end
 // IMPL< necessary because we can't store the function inside the Concept as a item! >
 let mutable heuristics2: Heuristic2[] = [||];
 
-let retHeuristicByName (name:string) =
+let retHeuristicByName (name:Symbl) =
    match Array.tryFindIndex (fun (e:Heuristic2) -> e.name = name) heuristics2 with
     | Some idx -> Some (heuristics2.[idx])
     | None   -> None
@@ -467,7 +555,7 @@ let mutable taskCnt = 0L; // task counter
 // all (global) concepts
 let mutable concepts: Concept[] = [||];
 
-let retConceptByName (name:string) =
+let retConceptByName (name:Symbl): Concept option =
   match Array.tryFindIndex (fun (e:Concept) -> (retConceptName e) = name) concepts with
     | Some idx -> Some (concepts.[idx])
     | None   -> None
@@ -475,7 +563,7 @@ let retConceptByName (name:string) =
 
 // updates the value of a slot or creates the slot and set the value
 // /param name path of the slot
-let updateConceptSlot (conceptName:string) (name:string[]) (value:Variant) =
+let updateConceptSlot (conceptName:Symbl) (name:string[]) (value:Variant) =
   match Array.tryFindIndex (fun (e:Concept) -> (retConceptName e) = conceptName) concepts with
     | Some idx ->
       let c = (concepts.[idx]);
@@ -493,7 +581,7 @@ let updateConceptSlot (conceptName:string) (name:string[]) (value:Variant) =
 // /param conceptName name of the concept
 // /param slotName name of the slot, Lenat calls these "facet"
 // /param addedHeuristicName added heuristic name
-let conceptAppendHeuristicName (conceptName:string) (slotName:string) (addedHeuristicName:string) =
+let conceptAppendHeuristicName (conceptName:Symbl) (slotName:string) (addedHeuristicName:Symbl) =
   match Array.tryFindIndex (fun (e:Concept) -> (retConceptName e) = conceptName) concepts with
   | Some conceptIdx ->
 
@@ -501,25 +589,25 @@ let conceptAppendHeuristicName (conceptName:string) (slotName:string) (addedHeur
     | Some idx ->
        concepts.[conceptIdx].slots.[idx].heuristicNames <- Array.append concepts.[conceptIdx].slots.[idx].heuristicNames [|addedHeuristicName|];
     | None   ->
-      printfn "[w2] couldn't find slot=%s of concept=%s" slotName conceptName
+      warning 2 (String.Format ("couldn't find slot={0} of concept={1}", slotName, (convSymblToStrRec conceptName)))
       ()
   | None ->
-    printfn "[w2] couldn't find concept=%s" conceptName
+    warning 2 (String.Format ("couldn't find concept={0}", (convSymblToStrRec conceptName)))
     ()
 
 
 
 
 
-type AddConceptInfo = { name: string; usefulness: float }
+type AddConceptInfo = { name: Symbl; usefulness: float }
 
 // adds a concept with the fields
 let conceptsAdd (info:AddConceptInfo) (fields: (string * Variant) list) =
   let mutable slots = [||];
   slots <- [|
-    new Slot([|"name"|], fun a -> makeString info.name);
+    new Slot([|"name"|], fun a -> makeSymbl info.name);
     new Slot([|"usefulness"|], fun a -> makeFloat info.usefulness);
-    //new Slot([|strGen|], fun a -> makeString "Active");
+    new Slot([|"creationAuthor"|], fun a -> makeSymbl (SymblName "Self")); // the system has created the concept
   |];
   
   for fieldName, fieldValue in fields do
@@ -533,41 +621,41 @@ let fillLenatConcepts () =
   let mutable slots: Slot[] = [||];
   
   // is important! see [Lenat phd dissertation page pdf 138] for justification
-  conceptsAdd {name="Equality"; usefulness=0.8} []
+  conceptsAdd {name=SymblName "Equality"; usefulness=0.8} []
 
-  conceptsAdd {name="Anything"; usefulness=0.5} []
+  conceptsAdd {name=SymblName "Anything"; usefulness=0.5} []
 
   
   // see [Lenat phd dissertation page pdf 113]
-  conceptsAdd {name="Any-concept"; usefulness=0.5} [(strGen, makeString "Anything")]
+  conceptsAdd {name=SymblName "Any-concept"; usefulness=0.5} [(strGen, makeString "Anything")]
   
   // see [Lenat phd dissertation page pdf 113]
-  conceptsAdd {name="Object"; usefulness=0.5} [(strGen, makeString "Any-concept")]
+  conceptsAdd {name=SymblName "Object"; usefulness=0.5} [(strGen, makeString "Any-concept")]
   
   // see [Lenat phd dissertation page pdf 113]
   // "Structure" means data-structure here!
-  conceptsAdd {name="Structure"; usefulness=0.5} [(strGen, makeString "Object")]
+  conceptsAdd {name=SymblName "Structure"; usefulness=0.5} [(strGen, makeString "Object")]
 
   // see [Lenat phd dissertation page pdf 113]
-  conceptsAdd {name="Ordered"; usefulness=0.5} [(strGen, makeString "Structure")]
-  conceptsAdd {name="Unordered"; usefulness=0.5} [(strGen, makeString "Structure")]
+  conceptsAdd {name=SymblName "Ordered"; usefulness=0.5} [(strGen, makeString "Structure")]
+  conceptsAdd {name=SymblName "Unordered"; usefulness=0.5} [(strGen, makeString "Structure")]
   
-  conceptsAdd {name="Numbers"; usefulness=0.5} []
+  conceptsAdd {name=SymblName "Numbers"; usefulness=0.5} []
 
   // see [Lenat phd dissertation page pdf 113]
   // "Activity represents something that can be performed"
   //   [Lenat phd dissertation page pdf 114]
   //   definition [Lenat phd dissertation page pdf 182]
-  conceptsAdd {name="Active"; usefulness=0.5} [(strGen, makeString "Any-concept")]
+  conceptsAdd {name=SymblName "Active"; usefulness=0.5} [(strGen, makeString "Any-concept")]
 
   // see [Lenat phd dissertation page pdf 113]
-  conceptsAdd {name="Operation"; usefulness=0.5} [(strGen, makeString "Active")]
+  conceptsAdd {name=SymblName "Operation"; usefulness=0.5} [(strGen, makeString "Active")]
   
-  conceptsAdd {name="Predicate"; usefulness=0.5} [(strGen, makeString "Active")]
+  conceptsAdd {name=SymblName "Predicate"; usefulness=0.5} [(strGen, makeString "Active")]
   
   // see [Lenat phd dissertation page pdf 183]
-  conceptsAdd {name="Constant-Predicate"; usefulness=0.1} [
-    ("isa", makeArr [|makeString "Predicate"|]);
+  conceptsAdd {name=SymblName "Constant-Predicate"; usefulness=0.1} [
+    ("isa", makeArr [|makeSymbl (SymblName "Predicate")|]);
     // TODO< create elipsis for domain !!! >
     ("domain-range", makeArr[|makeSymbl (SymblBinary (SymblName "Anything", "-->", SymblProd [SymblName "T";SymblName "F"]))|]);
     (strSpec, makeArr [|makeString "Constant-True"; makeString "Constant-False"|])
@@ -576,7 +664,7 @@ let fillLenatConcepts () =
   // see [Lenat phd dissertation page pdf 183]
   // see [Lenat phd dissertation page pdf 184]
   for binaryTruthName, binaryTruthValue in [("True", SymblName "T");("False", SymblName "F")] do
-    conceptsAdd {name=("Constant-" + binaryTruthName); usefulness=0.1} [
+    conceptsAdd {name=SymblName ("Constant-" + binaryTruthName); usefulness=0.1} [
       (strGen, makeString "Constant-Predicate");
       // TODO< create elipsis for domain !!! >
       ("definition", makeArr [|makeArr[|makeString "nonrecursive"; makeString "very-quick"; makeSymbl (binaryTruthValue)|]|]);
@@ -588,7 +676,7 @@ let fillLenatConcepts () =
   
   // see [Lenat phd dissertation page pdf 215]
   slots <- [|
-    new Slot([|"name"|], fun a -> makeString "Atom-obj");
+    new Slot([|"name"|], fun a -> makeSymbl (SymblName "Atom-obj"));
     new Slot([|"usefulness"|], fun a -> makeFloat 0.1);
     new Slot([|strGen|], fun a -> makeString "Object");
   |];
@@ -596,7 +684,7 @@ let fillLenatConcepts () =
 
   // see [Lenat phd dissertation page pdf 215]
   slots <- [|
-    new Slot([|"name"|], fun a -> makeString "BooleanTruth-Value");
+    new Slot([|"name"|], fun a -> makeSymbl (SymblName "BooleanTruth-Value"));
     new Slot([|"usefulness"|], fun a -> makeFloat 0.1);
     new Slot([|strGen|], fun a -> makeString "Atom-obj");
   |];
@@ -604,7 +692,7 @@ let fillLenatConcepts () =
 
   // see [Lenat phd dissertation page pdf 113]
   slots <- [|
-    new Slot([|"name"|], fun a -> makeString "Lists");
+    new Slot([|"name"|], fun a -> makeSymbl (SymblName "Lists"));
     new Slot([|"usefulness"|], fun a -> makeFloat 0.5);
     new Slot([|strGen|], fun a -> makeString "Ordered");
   |];
@@ -612,7 +700,7 @@ let fillLenatConcepts () =
 
   // see [Lenat phd dissertation page pdf 113]
   slots <- [|
-    new Slot([|"name"|], fun a -> makeString "Sets");
+    new Slot([|"name"|], fun a -> makeSymbl (SymblName "Sets"));
     new Slot([|"usefulness"|], fun a -> makeFloat 0.5);
     new Slot([|strGen|], fun a -> makeString "Unordered");
   |];
@@ -620,7 +708,7 @@ let fillLenatConcepts () =
   
 
   slots <- [|
-    new Slot([|"name"|], fun a -> makeString "Union");
+    new Slot([|"name"|], fun a -> makeSymbl (SymblName "Union"));
     new Slot([|"usefulness"|], fun a -> makeFloat 0.1); // 0.1 see [Lenat phd dissertation page pdf 196]
     
     new Slot([|"isa"|], fun a -> makeString "Operation");
@@ -632,9 +720,9 @@ let fillLenatConcepts () =
   
   // see [Lenat phd dissertation page pdf 198]
   slots <- [|
-    new Slot([|"name"|], fun a -> makeString "Set-Union");
+    new Slot([|"name"|], fun a -> makeSymbl (SymblName "Set-Union"));
     new Slot([|"usefulness"|], fun a -> makeFloat 0.1); // 0.1 see [Lenat phd dissertation page pdf 198]
-    new Slot([|strGen|], fun a -> makeString "Union");
+    new Slot([|strGen|], fun a ->  makeSymbl (SymblName "Union"));
 
     new Slot([|"domain-range"|], fun a -> makeArr [|
       makeSymbl (SymblBinary (SymblProd [SymblName "Sets"; SymblName "Sets"], "-->", SymblName "Sets"))
@@ -654,9 +742,9 @@ let fillLenatConcepts () =
   // see [Lenat phd dissertation page pdf 185]
   // TODO< remaining domains >
   // TODO< remaining definitions >
-  conceptsAdd {name="Compose"; usefulness=0.1} [
-    (strGen, makeString "Operation");
-    ("isa", makeString "Operation");
+  conceptsAdd {name=SymblName "Compose"; usefulness=0.1} [
+    (strGen,  makeSymbl (SymblName "Operation"));
+    ("isa",  makeSymbl (SymblName "Operation"));
     ("domain-range", makeArr [|
       makeSymbl (SymblBinary (SymblProd [SymblName "Active"; SymblName "Active"],"-->",SymblName "Active"));
       makeSymbl (SymblBinary (SymblProd [SymblName "Operation"; SymblName "Active"],"-->",SymblName "Operation"));
@@ -680,35 +768,35 @@ let fillLenatConcepts () =
 
   // see [Lenat phd dissertation page pdf 94]
   slots <- [|
-    new Slot([|"name"|], fun a -> makeString "Sets-union");
+    new Slot([|"name"|], fun a -> makeSymbl (SymblName  "Sets-union");
     new Slot([|"usefulness"|], fun a -> makeFloat 0.5);
   |];
   concepts <- Array.append concepts [|new Concept(slots)|];
 
   // see [Lenat phd dissertation page pdf 94]
   slots <- [|
-    new Slot([|"name"|], fun a -> makeString "Sets-delete");
+    new Slot([|"name"|], fun a -> makeSymbl (SymblName  "Sets-delete");
     new Slot([|"usefulness"|], fun a -> makeFloat 0.5);
   |];
   concepts <- Array.append concepts [|new Concept(slots)|];
 
   // see [Lenat phd dissertation page pdf 94]
   slots <- [|
-    new Slot([|"name"|], fun a -> makeString "Sets-insert");
+    new Slot([|"name"|], fun a -> makeSymbl (SymblName  "Sets-insert");
     new Slot([|"usefulness"|], fun a -> makeFloat 0.5);
   |];
   concepts <- Array.append concepts [|new Concept(slots)|];
 
   // see [Lenat phd dissertation page pdf 94]
   slots <- [|
-    new Slot([|"name"|], fun a -> makeString "Sets-equal");
+    new Slot([|"name"|], fun a -> makeSymbl (SymblName  "Sets-equal");
     new Slot([|"usefulness"|], fun a -> makeFloat 0.5);
   |];
   concepts <- Array.append concepts [|new Concept(slots)|];
 
   // see [Lenat phd dissertation page pdf 99]
   slots <- [|
-    new Slot([|"name"|], fun a -> makeString "Sets-intersect");
+    new Slot([|"name"|], fun a -> makeSymbl (SymblName  "Sets-intersect");
     new Slot([|"usefulness"|], fun a -> makeFloat 0.5);
   |];
   concepts <- Array.append concepts [|new Concept(slots)|];
@@ -738,7 +826,7 @@ let fillCustomConcepts () =
   
   // concept from which all heuristics specialize
   slots <- [|
-    new Slot([|"name"|], fun a -> makeString "Heuristic");
+    new Slot([|"name"|], fun a -> makeSymbl (SymblName "Heuristic"));
     new Slot([|"usefulness"|], fun a -> makeFloat 0.999);
     new Slot([|"usefulnessIsFrozen"|], fun a -> makeLong 1L); // freeze usefulness 
     //new Slot([|strGen|], fun a -> makeString "Any");
@@ -748,7 +836,7 @@ let fillCustomConcepts () =
   // use to refer and store everything related to the AI itself
   // TODO SCIFI< is a good place to add basic emotion parameters >
   slots <- [|
-    new Slot([|"name"|], fun a -> makeString "Self");
+    new Slot([|"name"|], fun a -> makeSymbl (SymblName "Self"));
     new Slot([|"usefulness"|], fun a -> makeFloat 0.999);
     new Slot([|"usefulnessIsFrozen"|], fun a -> makeLong 1L); // freeze usefulness 
     //new Slot([|strGen|], fun a -> makeString "Any");
@@ -756,7 +844,7 @@ let fillCustomConcepts () =
   concepts <- Array.append concepts [|new Concept(slots)|];
   
   slots <- [|
-    new Slot([|"name"|], fun a -> makeString "Integer");
+    new Slot([|"name"|], fun a -> makeSymbl (SymblName "Integer"));
     new Slot([|"usefulness"|], fun a -> makeFloat 0.999);
     new Slot([|"usefulnessIsFrozen"|], fun a -> makeLong 1L); // freeze usefulness 
     new Slot([|strGen|], fun a -> makeString "Atom-obj");
@@ -789,14 +877,14 @@ let fillLenatHeuristics () =
     let heuristicSuggestTasksAction (invocationCtx:HeuristicInvocationCtx) =
       let nameOfConcept = (retConceptName invocationCtx.concept);
 
-      let reason_hr = "no examples of "+nameOfConcept+" filled in so far" // human readable reason
+      let reason_hr = "no examples of "+(convSymblToStrRec nameOfConcept)+" filled in so far" // human readable reason
 
       debug 0 (String.Format ("heuristicSuggestTasks() called for concept={0}", nameOfConcept))
       // TODO< fully implement this heuristic >
     
     heuristicActions.Add("heuristicSuggestTasksAction", heuristicSuggestTasksAction); // IMPL< register action >
 
-    let heuristicName = ("H_"+"suggestTasks");
+    let heuristicName = SymblName ("H_"+"suggestTasks");
 
     heuristics2 <- Array.append heuristics2
       [|new Heuristic2(heuristicName, [|heuristicSuggestTaskLeftSide|])|]; // IMPL< register >
@@ -805,25 +893,27 @@ let fillLenatHeuristics () =
     // create and add heuristic concept
     let slots =
       [|
-      new Slot([|"name"|], fun a -> makeString heuristicName);
+      new Slot([|"name"|], fun a -> makeSymbl heuristicName);
       new Slot([|"usefulness"|], fun a -> (makeFloat 0.75));
       new Slot([|"heuristicActions"|], fun a -> (makeArr [|makeString "heuristicSuggestTasksAction"|])); // IMPL< register action for heuristic >
-      new Slot([|strGen|], fun a -> makeString "Heuristic"); // "is a" relationship
+      new Slot([|strGen|], fun a -> makeSymbl (SymblName "Heuristic")); // "is a" relationship
+      new Slot([|"isa"|], fun a -> makeSymbl (SymblName "Heuristic"));
       |];
     concepts <- Array.append concepts [|new Concept(slots)|];
     
     
     // add heuristic to "Any-concept" concept
-    let anyConceptMaybe: Concept option = (retConceptByName "Any-concept");
+    let nameOfConcept = SymblName "Any-concept"
+    let anyConceptMaybe: Concept option = (retConceptByName nameOfConcept);
     
     match anyConceptMaybe with
     | Some c ->
       
-      updateConceptSlot "Any-concept" [|"suggest"|] (makeString ""); // IMPL< ensure the slot exists >    
-      conceptAppendHeuristicName "Any-concept" "suggest" heuristicName
+      updateConceptSlot nameOfConcept [|"suggest"|] (makeString ""); // IMPL< ensure the slot exists >    
+      conceptAppendHeuristicName nameOfConcept "suggest" heuristicName
       
     | None -> 
-      printfn "[w ] couldn't find concept=%s" "Any-concept";
+      printfn "[w ] couldn't find concept=%s" (convSymblToStrRec nameOfConcept);
   
   (fillHeuristicSuggestAction ())
   
@@ -852,9 +942,9 @@ let fillLenatHeuristics () =
       if false then
         false // composition already exists
       else
-        debug 7 (conceptRetSlotOrNull invocationCtx.concept [|"name"|]).valString
+        debug 7 ((conceptRetSlotOrNull invocationCtx.concept [|"name"|]) |> retVariantStringOrDefault)
 
-        let isInterestingEnough = (conceptRetSlotOrNull invocationCtx.concept [|"interestingness"|]).valFloat >= interestingThreshold
+        let isInterestingEnough = ((conceptRetSlotOrNull invocationCtx.concept [|"interestingness"|]) |> retVariantRealOrDefault) >= interestingThreshold
         let isOperationWithSameDomainAndRange = conceptIsOperationWithSameDomainAndRange invocationCtx.concept
         printfn "[d ] isInterestingEnough=%b, isOperationWithSameDomainAndRange=%b" isInterestingEnough isOperationWithSameDomainAndRange
 
@@ -871,7 +961,7 @@ let fillLenatHeuristics () =
         let generalization = (conceptRetSlotOrNull a [|strGen|]); // generalization of source concept which is a function
         assert_ (not (isNull generalization)) "H185 generalization was null!";
         
-        conceptsAdd {name=nameOfConcept + " o " + nameOfConcept; usefulness=0.1} [
+        conceptsAdd {name=SymblBinary(nameOfConcept, "o", nameOfConcept); usefulness=0.1} [ // use "o" binary to indicate composition
           (strGen, generalization)
           // TODO< field for definition which we compose out of the definition of the source concept(s) >
           // TODO< other fields >
@@ -881,7 +971,7 @@ let fillLenatHeuristics () =
 
       let nameOfConcept = (retConceptName invocationCtx.concept);
 
-      debug 0 (String.Format ("Heuristic185 called for concept={0}!", nameOfConcept));
+      debug 0 (String.Format ("Heuristic185 called for concept={0}!", convSymblToStrRec nameOfConcept));
 
       // TODO< fully implement this heuristic >
       // TODO< call composeFunctionAndCreateConceptIfNecessary() for other compositions - see  >
@@ -889,7 +979,7 @@ let fillLenatHeuristics () =
     
     heuristicActions.Add("heuristic185SuggestAction", heuristicAction); // IMPL< register action >
 
-    let heuristicName = ("H_"+"185");
+    let heuristicName = SymblName ("H_"+"185");
 
     heuristics2 <- Array.append heuristics2
       [|new Heuristic2(heuristicName, [|heuristicLeftSide|])|]; // IMPL< register >
@@ -898,16 +988,17 @@ let fillLenatHeuristics () =
     // create and add heuristic concept
     let slots =
       [|
-      new Slot([|"name"|], fun a -> makeString heuristicName);
+      new Slot([|"name"|], fun a -> (makeSymbl heuristicName));
       new Slot([|"usefulness"|], fun a -> (makeFloat 0.75));
       new Slot([|"heuristicActions"|], fun a -> (makeArr [|makeString "heuristic185SuggestAction"|])); // IMPL< register action for heuristic >
-      new Slot([|strGen|], fun a -> makeString "Heuristic"); // "is a" relationship
+      new Slot([|strGen|], fun a ->  makeSymbl (SymblName "Heuristic")); // "is a" relationship
+      new Slot([|"isa"|], fun a -> makeSymbl (SymblName "Heuristic"));
       |];
     concepts <- Array.append concepts [|new Concept(slots)|];
     
     
     // add heuristic to concept
-    let conceptNameOfAddedHeuristic = "Compose";
+    let conceptNameOfAddedHeuristic = SymblName "Compose";
     match (retConceptByName conceptNameOfAddedHeuristic) with
     | Some c ->
       
@@ -915,7 +1006,7 @@ let fillLenatHeuristics () =
       conceptAppendHeuristicName conceptNameOfAddedHeuristic "suggest" heuristicName
       
     | None -> 
-      warning 0 (String.Format ("couldn't find concept={0}", conceptNameOfAddedHeuristic))
+      warning 0 (String.Format ("couldn't find concept={0}", convSymblToStrRec conceptNameOfAddedHeuristic))
 
 
   (fillHeuristic185 ())
@@ -928,12 +1019,12 @@ let fillDefaultTasks () =
   let mutable task = new Task(taskIdCounter, 0.5);
   taskIdCounter <- taskIdCounter + 1L;
   task.taskType <- "fillin";
-  task.manipulatedConceptName <- "Any-concept"; // TODO< choose better concept which makes sense >
+  task.manipulatedConceptName <- SymblName "Any-concept"; // TODO< choose better concept which makes sense >
   task.facetName <- "suggest";
 
   // TODO< put reasons into task >
 
-  task.name_hr <- "Fill in facet="+task.facetName+" of the Concept="+task.manipulatedConceptName
+  task.name_hr <- "Fill in facet="+task.facetName+" of the Concept="+(convSymblToStrRec task.manipulatedConceptName)
   
   // TODO< insert by priority >
   agenda.tasks <- Array.append [|task|] agenda.tasks;
@@ -947,6 +1038,11 @@ let fillDefaultTasks () =
 // fill heuristis with hardcoded heuristics
 (fillLenatHeuristics ())
 
+// run checks on concepts
+// TODO (conceptsCheckOptAllItems "name" (fun value -> isSymbl value)) // check for name is a Symbl
+// TODO (conceptsCheckOptAllItems "isa" (fun value -> isSymbl value)) // check for isa is a Symbl
+// TODO (conceptsCheckOptAllItems strGen (fun value -> isSymbl value)) // check for generalization is a Symbl
+// TODO (conceptsCheckExistSlot "usefullness") // make sure that every concept has a "usefullness" slot
 
 
 // tries to apply the task to a (host) concept
@@ -964,23 +1060,23 @@ let tryApplyTaskToConcept (task:Task) (hostConcept:Concept) =
       // retrieve heuristic concept
 
       
-      printfn "[d ] found iHeuristicConceptName=%s of concept=%s" iHeuristicConceptName (retConceptName hostConcept);
+      debug 0 (String.Format ("found iHeuristicConceptName={0} of concept={1}", iHeuristicConceptName, (retConceptName hostConcept |> convSymblToStrRec)))
       
       let heuristicConceptOpt: Concept option = (retConceptByName iHeuristicConceptName)
-      let mutable heuristicName = iHeuristicConceptName;
+      let mutable heuristicName = iHeuristicConceptName
       
-      let heuristicMaybe: Heuristic2 option = (retHeuristicByName heuristicName);
+      let heuristicMaybe: Heuristic2 option = (retHeuristicByName heuristicName)
 
       match heuristicMaybe with
       | Some heuristic -> 
         // iterate over applied concepts
         // TODO< keep track of resource quota's >
         for iAppliedConcept in concepts do
-          let invocationCtx = new HeuristicInvocationCtx(task, iAppliedConcept);
+          let invocationCtx = new HeuristicInvocationCtx(task, iAppliedConcept)
           let heuristicFires = (checkLeftSide heuristic invocationCtx)
 
           if heuristicFires then
-            printfn "[d5] heuristicConceptName=%s heuristic=%s FIRING!" iHeuristicConceptName heuristicName;
+            printfn "[d5] heuristicConceptName=%s heuristic=%s FIRING!" (convSymblToStrRec iHeuristicConceptName) (convSymblToStrRec heuristicName);
             
             let heuristicActionsNamesOpt: string[] option =
               match heuristicConceptOpt with
@@ -991,7 +1087,7 @@ let tryApplyTaskToConcept (task:Task) (hostConcept:Concept) =
 
             match heuristicActionsNamesOpt with
             | Some heuristicActionsNames ->
-              printfn "[d5] found heuristicActions of heuristic name=%s" heuristicName;
+              printfn "[d5] found heuristicActions of heuristic name=%s" (convSymblToStrRec heuristicName);
 
               // execute body of heuristic
               for iHeuristicActionName in heuristicActionsNames do
@@ -999,19 +1095,19 @@ let tryApplyTaskToConcept (task:Task) (hostConcept:Concept) =
 
                 if foundHeuristicAction then
                   
-                  printfn "[d6]   invoke heuristicAction name=%s for concept=%s" iHeuristicActionName (retConceptName iAppliedConcept);
+                  printfn "[d6]   invoke heuristicAction name=%s for concept=%s" iHeuristicActionName (retConceptName iAppliedConcept |> convSymblToStrRec);
 
                   (heuristicAction invocationCtx);
                 else
                   printfn "[w6]   could not find heuristic action name=%s" iHeuristicActionName;
 
             | None ->
-              printfn "[w ] couldn't retrieve heuristicActions of heuristic name=%s" heuristicName;
+              printfn "[w ] couldn't retrieve heuristicActions of heuristic name=%s" (convSymblToStrRec heuristicName);
 
         ()
 
       | None ->
-        printfn "[w ] heuristicConcept=%s pointed at heuristic=%s which was not found!" iHeuristicConceptName heuristicName;
+        printfn "[w ] heuristicConcept=%s pointed at heuristic=%s which was not found!" (convSymblToStrRec iHeuristicConceptName) (convSymblToStrRec heuristicName);
 
       
       ()
@@ -1063,7 +1159,7 @@ let conceptRetDomainRange (concept:Concept): DomainRange[] =
     let mutable idx = 0;
     let mutable return_: bool = false;
     while idx < (Array.length arr) && not return_ do
-      if arr.[idx].valString = "-->" then
+      if (retVariantStringOrDefault arr.[idx]) = "-->" then
         return_ <- true;
       else
         idx <- idx + 1;
@@ -1077,21 +1173,22 @@ let conceptRetDomainRange (concept:Concept): DomainRange[] =
   if isNull domRange then
     warning 5 "domRange was null because it was not found!";
 
-  if isArr domRange then
-    for iDomRange in domRange.valArr do
 
-      if isArr iDomRange then // IMPL< must be array because we store domain/range as array as [|DA DB "-->" Range0|]]>
-        let idxOfProj2 = (idxOfProj iDomRange.valArr);
+  for iDomRange in retVariantArrOrDefault domRange do
 
-        let domain = Array.sub iDomRange.valArr 0 (idxOfProj2);
-        let range = iDomRange.valArr.[idxOfProj2+1];
+    if isArr iDomRange then // IMPL< must be array because we store domain/range as array as [|DA DB "-->" Range0|]]>
+      let arrOfIDomRange = retVariantArrOrDefault iDomRange
+      let idxOfProj2 = (idxOfProj arrOfIDomRange);
 
-        res <- Array.append res [|{domain = domain; range = range}|];
+      let domain = Array.sub arrOfIDomRange 0 (idxOfProj2);
+      let range = arrOfIDomRange.[idxOfProj2+1];
+
+      res <- Array.append res [|{domain = domain; range = range}|];
 
   res
 
 
-
+(* commented and outdated because not used
 // heuristic as described in Lenat's thesis at pdf page 55
 // IMPL< D stand for "documented" - because Lenat wrote a detailed description of it >
 //
@@ -1176,7 +1273,7 @@ let heuristicBodyD55 () =
         added <- Array.append added [|(makeString "-->"); X|];
         addToSlot "non-examples" added
         ()
-
+ *)
 
 
 
@@ -1189,30 +1286,8 @@ let fuse (isSet:bool) (a:Variant[]) (b:Variant[]): Variant[] =
   let mutable res = Array.copy a;
   
   let isInRes (v:Variant): bool =
-    let rec eq (a:Variant) (b:Variant) =
-      if a.type_ <> b.type_ then
-        false
-      else
-        match a.type_ with
-        | 0 -> true // null is always equal
-        | 1 -> a.valString = b.valString
-        | 3 -> a.valInt = b.valInt
-        | 4 -> a.valFloat = b.valFloat
-        | 5 -> false // can't compare functions
-        | 2 ->
-          // array
-          if (Array.length a.valArr) = (Array.length b.valArr) then
-            let mutable idx = 0;
-            let mutable res = true;
-            while idx < (Array.length a.valArr) do
-              res <- res && (eq (a.valArr.[idx]) (b.valArr.[idx]));
-              idx <- idx + 1;
-            res
-          else
-            false
-    
     if isSet then
-      Array.exists (eq v) res
+      Array.exists (checkVariantEq v) res
     else
       false // IMPL< just append if it has to behave like a array - append >
   
