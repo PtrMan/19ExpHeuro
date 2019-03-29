@@ -5,7 +5,7 @@ open Heuro
 
 agenda.tasks <- [||]; // IMPL< flush tasks >
 // IMPL< ... to insert test task >
-let insertTestTasks = 
+let insertTestTasks () = 
   let mutable task = new Task(taskIdCounter, 0.5);
   taskIdCounter <- taskIdCounter + 1L;
   task.taskType <- "fillin";
@@ -18,7 +18,7 @@ let insertTestTasks =
   
   // TODO< insert by priority >
   agenda.tasks <- Array.append [|task|] agenda.tasks;
-(insertTestTasks);
+(insertTestTasks ());
 
 
 
@@ -30,3 +30,8 @@ updateConceptSlot conceptnameOfBumpedInterestingness [|"interestingness"|] (make
 (selectTaskAndProcess ())
 
 printfn "[i ] terminated gracefully";
+
+
+
+agenda.tasks <- [||];
+concepts <- [||]; // reset all concepts for the next test

@@ -564,6 +564,25 @@ let fillLenatConcepts () =
   conceptsAdd {name="Operation"; usefulness=0.5} [(strGen, makeString "Active")]
   
   conceptsAdd {name="Predicate"; usefulness=0.5} [(strGen, makeString "Active")]
+  
+  // see [Lenat phd dissertation page pdf 183]
+  conceptsAdd {name="Constant-Predicate"; usefulness=0.1} [
+    ("isa", makeArr [|makeString "Predicate"|]);
+    // TODO< create elipsis for domain !!! >
+    ("domain-range", makeArr[|makeSymbl (SymblBinary (SymblName "Anything", "-->", SymblProd [SymblName "T";SymblName "F"]))|]);
+    (strSpec, makeArr [|makeString "Constant-True"; makeString "Constant-False"|])
+    ("what", makeString "a predicate which always returns the same logical value")]
+  
+  // see [Lenat phd dissertation page pdf 183]
+  // see [Lenat phd dissertation page pdf 184]
+  for binaryTruthName, binaryTruthValue in [("True", SymblName "T");("False", SymblName "F")] do
+    conceptsAdd {name=("Constant-" + binaryTruthName); usefulness=0.1} [
+      (strGen, makeString "Constant-Predicate");
+      // TODO< create elipsis for domain !!! >
+      ("definition", makeArr [|makeArr[|makeString "nonrecursive"; makeString "very-quick"; makeSymbl (binaryTruthValue)|]|]);
+      ("what", makeString ("a predicate which always returns" + binaryTruthName))]
+  
+
 
   // TODO< rewrite to use conceptsAdd() for most other creations of concepts! >
   
@@ -639,19 +658,21 @@ let fillLenatConcepts () =
     (strGen, makeString "Operation");
     ("isa", makeString "Operation");
     ("domain-range", makeArr [|
-      makeSymbl (SymblBinary (SymblProd [SymblName "Active"; SymblName "Active"],"-->",SymblName "Active"))|]);
+      makeSymbl (SymblBinary (SymblProd [SymblName "Active"; SymblName "Active"],"-->",SymblName "Active"));
+      makeSymbl (SymblBinary (SymblProd [SymblName "Operation"; SymblName "Active"],"-->",SymblName "Operation"));
+      makeSymbl (SymblBinary (SymblProd [SymblName "Predicate"; SymblName "Active"],"-->",SymblName "Predicate"));
+      makeSymbl (SymblBinary (SymblProd [SymblName "Relation"; SymblName "Relation"],"-->",SymblName "Relation"))|]);
+    
+    
     ("definition", 
       makeArr [|
-      // declarative slow 
-      makeArr[|
+        // declarative slow 
         makeArr[|
           makeString "declarative"; makeString "slow";
-          
+        
           // C(x) = A(B(x))
-          composeDefinitionDeclarativeSlow
-        |] |] |]
-      )
-    ]
+          composeDefinitionDeclarativeSlow;
+          |] |] )]
   
 
 
