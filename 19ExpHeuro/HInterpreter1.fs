@@ -56,7 +56,7 @@ let heuristicAlgo1Interpreter (manipulatedHeuristic: Concept) (repr:string list)
       let mutable heuristicActionsArr: Variant[] = conceptRetSlotOrNull manipulatedHeuristic [|"heuristicActions"|] |> retVariantArrOrDefault
       if removedIdx < Array.length heuristicActionsArr then
         heuristicActionsArr <- removeAt removedIdx heuristicActionsArr
-        slotPut manipulatedHeuristic.slots [|"heuristicActions"|] "" (makeArr heuristicActionsArr)
+        slotPut manipulatedHeuristic.slots [|"heuristicActions"|] "" (makeArr heuristicActionsArr) |> ignore
 
         printfn "[d9]  removed!"
 
@@ -70,5 +70,7 @@ let heuristicAlgo1Interpreter (manipulatedHeuristic: Concept) (repr:string list)
     match repr.Head with
     | "remove" -> // remove something
       doRemove repr.Tail
+    | _ ->
+      printfn "[w9] heuristicAlgo1Interpreter():  %s is a unknown command" repr.Head
   else
     printfn "[w9] heuristicAlgo1Interpreter(): repr is empty!"

@@ -244,48 +244,135 @@ let strGen = "generalization";
 let strSpec = "specialization";
 
 
+// epoch counter for SSA
+// used to decide when to create a new SlotHistoryEntry 
+let mutable ssaEpoch = 1L;
 
+// history entry of a slot
+// history is necessary for SSA
+type SlotHistoryEntry = struct
+  // SSA epoch of the creation time of this history entry
+  // is used to determine if we have to create a new history entry because a new value was written to it
+  val creationSsaEpoch: int64
 
+  val value: string->Variant // unitname is passed as arg
 
-
+  // TODO REFACTOR< make to list >
+  // TODO LATER< generalize with some PLL like language >  
+  // heuristics are "tacked" to slots, as described in Lenat's dissertation physical page 55
+  // heuristics have their own concepts like in EURISKO [EURISKO Micro pdf page 7]
+  val heuristicNames: Symbl[]
+  
+  new (creationSsaEpoch_, value_, heuristicNames_) = {
+    creationSsaEpoch = creationSsaEpoch_
+    value = value_
+    heuristicNames = heuristicNames_
+  }
+end
 
 type Slot = struct
   val name : string[] // is a array because
                       // Lenat called it "facet" (of concepts) in AM. Facet's can have "sub-facets"
-  val mutable value : string->Variant // unitname is passed as arg
 
   val mutable getCounter : int64 // counts how many get operations were done overall
   val mutable getCounterHistory: int64[] // historic track keeping of get counters
 
-  // TODO LATER< generalize with some PLL like language >  
-  // heuristics are "tacked" to slots, as described in Lenat's dissertation physical page 55
-  // heuristics have their own concepts like in EURISKO [EURISKO Micro pdf page 7]
-  val mutable heuristicNames: Symbl[]
+  // history of values for SSA
+  val mutable history: SlotHistoryEntry[]
 
-  new (name_, value_) =
-    {name=name_;value=value_;getCounter=0L;getCounterHistory=[||];heuristicNames=[||];}
+  new (name_) =
+    {name=name_;getCounter=0L;getCounterHistory=[||]; history=[||];}
 end
 
+let slotRetTopHistoryEntry (slot: Slot) =
+  slot.history.[Array.length slot.history - 1]
+
+// returns the current value
+// indirection is necessary because of SSA
+let slotRetTopValue (slot: Slot) (subject: string): Variant =
+  let topHistoryEntry = slot.history.[Array.length slot.history - 1]
+  (topHistoryEntry.value subject)
+
+let slotRetTopHeuristicNames (slot: Slot) (subject: string): Symbl[] =
+  let topHistoryEntry = slot.history.[Array.length slot.history - 1]
+  topHistoryEntry.heuristicNames
 
 
+// TODO REFACTOR< rename to slotsRet >
 // /param name attribute name to be retrieved
 // /param subject object/subect for the call
 let slotGet (slots: Slot[]) (name: string[]) (subject: string): Variant =
   match Array.tryFindIndex (fun (e:Slot) -> e.name = name) slots with
     | Some idx ->
        slots.[idx].getCounter <- slots.[idx].getCounter + 1L; // bump get counter
-       let r2: string->Variant = slots.[idx].value;
-       r2 (subject)
+       slotRetTopValue slots.[idx] subject
     | None   -> (makeNull)
+
+let slotGetHeuristicNames (slots: Slot[]) (name: string[]) (subject: string): Symbl[] =
+  match Array.tryFindIndex (fun (e:Slot) -> e.name = name) slots with
+  | Some idx ->
+      slots.[idx].getCounter <- slots.[idx].getCounter + 1L; // bump get counter
+      slotRetTopHeuristicNames slots.[idx] subject
+  | None   -> [||]
+
+// updates the value
+//
+// if the slot has the same SSA-epoch - then we simply overwrite the value
+// else - then we create a new history entry
+// a special case if if no history entries exist - then we simply create it
+let _slotPutAtIdx (slots: Slot[]) (slotIdx:int) (updateSlotHistoryEntryFn:(SlotHistoryEntry->SlotHistoryEntry)) (createSlotHistoryEntryFn:(unit->SlotHistoryEntry)) =
+  // creates a new history entry and appends it
+  let appendSlotHistoryEntry () =
+    let createdHistoryEntry = (createSlotHistoryEntryFn ())
+    slots.[slotIdx].history <- Array.append slots.[slotIdx].history [|createdHistoryEntry|]
+    
+  if Array.isEmpty slots.[slotIdx].history then
+    appendSlotHistoryEntry () // special case when no history entry exists yet
+  else
+    let topEntry = slotRetTopHistoryEntry slots.[slotIdx]
+    if topEntry.creationSsaEpoch = ssaEpoch then
+      // we can just overwrite it
+
+      let oldSlotHistoryEntry = slots.[slotIdx].history.[Array.length slots.[slotIdx].history - 1]
+      
+      slots.[slotIdx].history.[Array.length slots.[slotIdx].history - 1] <- (updateSlotHistoryEntryFn oldSlotHistoryEntry)
+    else
+      // we need to create a entry and append it
+      appendSlotHistoryEntry ()
 
 let slotPut (slots: Slot[]) (name: string[]) (subject: string) (value:Variant): bool =
   match Array.tryFindIndex (fun (e:Slot) -> e.name = name) slots with
     | Some idx ->
-       slots.[idx].value <- fun e -> value;
-       true
+      // function which updates a slotHistoryEntry
+      let updateSlotHistoryEntryFn (oldSlotHistoryEntry: SlotHistoryEntry): SlotHistoryEntry =
+        new SlotHistoryEntry(oldSlotHistoryEntry.creationSsaEpoch, (fun x -> value), oldSlotHistoryEntry.heuristicNames)
+      
+      let createSlotHistoryEntryFn (): SlotHistoryEntry =
+        new SlotHistoryEntry(ssaEpoch, (fun x -> value), [||])
+      
+      _slotPutAtIdx slots idx updateSlotHistoryEntryFn createSlotHistoryEntryFn
+      true
     | None   ->
-       printfn "[w ] slotPut failed! name=%s" (convPath name)
-       false
+      printfn "[w ] slotPut failed! name=%s" (convPath name)
+      false
+      
+
+
+let slotPutHeuristicNames (slots: Slot[]) (name: string[]) (subject: string) (heuristicNames:Symbl[]): bool =
+  match Array.tryFindIndex (fun (e:Slot) -> e.name = name) slots with
+  | Some idx ->
+    // function which updates a slotHistoryEntry
+    let updateSlotHistoryEntryFn (oldSlotHistoryEntry: SlotHistoryEntry): SlotHistoryEntry =
+      new SlotHistoryEntry(oldSlotHistoryEntry.creationSsaEpoch, oldSlotHistoryEntry.value, heuristicNames)
+    
+    let createSlotHistoryEntryFn () =
+      new SlotHistoryEntry(ssaEpoch, (fun x -> makeNull), heuristicNames)
+    
+    _slotPutAtIdx slots idx updateSlotHistoryEntryFn createSlotHistoryEntryFn
+    true
+  | None ->
+    printfn "[w ] slotPutHeuristicNames failed! name=%s" (convPath name)
+    false
 
 let slotHas (slots: Slot[]) (name: string[]) =
   // TODO< search all slots and return true if it has name >
@@ -298,18 +385,7 @@ let slotHas (slots: Slot[]) (name: string[]) =
       //break;// true;
     i <- i+1;
   has
-
-
-// helper to change the usefulness of a concept by slots
-let changeUsefulness (slots: Slot[]) (delta:float) =
-  match (slotGet slots [|"usefulness"|] "") with
-  | VariantFloat valUsefulness ->
-    let usefulness = valUsefulness + delta |> clamp 0.0 1.0
-    slotPut slots [|"usefulness"|] "" (makeFloat usefulness)
-    ()
-  | _ ->
-    warning 0 "tried to change item=usefullness which is not existing!"
-    ()
+  
 
 
 

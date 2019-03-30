@@ -21,6 +21,20 @@ open System.Collections.Generic
 open BaseStructures
 
 
+
+
+// helper to change the usefulness of a concept by slots
+let slotsChangeUsefulness (slots: Slot[]) (delta:float) =
+  match (slotGet slots [|"usefulness"|] "") with
+  | VariantFloat valUsefulness ->
+    let usefulness = valUsefulness + delta |> clamp 0.0 1.0
+    slotPut slots [|"usefulness"|] "" (makeFloat usefulness) |> ignore
+    ()
+  | _ ->
+    warning 0 "tried to change item=usefullness which is not existing!"
+    ()
+
+
 // reason for a task
 
 type Reason = struct
@@ -215,9 +229,11 @@ let updateConceptSlot (conceptName:Symbl) (name:string[]) (value:Variant) =
       let c = (concepts.[idx]);
 
       if not (slotHas c.slots name) then
-        concepts.[idx].slots <- Array.append concepts.[idx].slots [|new Slot(name, fun e -> value)|];
+        let mutable appendedSlot: Slot = new Slot(name)
+        appendedSlot.history <- [|new SlotHistoryEntry(ssaEpoch, (fun e -> value), [||])|]
+        concepts.[idx].slots <- Array.append concepts.[idx].slots [|appendedSlot|];
       
-      slotPut concepts.[idx].slots name "" value;
+      slotPut concepts.[idx].slots name "" value |> ignore
 
       ()
 
@@ -230,36 +246,33 @@ let updateConceptSlot (conceptName:Symbl) (name:string[]) (value:Variant) =
 let conceptAppendHeuristicName (conceptName:Symbl) (slotName:string) (addedHeuristicName:Symbl) =
   match Array.tryFindIndex (fun (e:Concept) -> (retConceptName e) = conceptName) concepts with
   | Some conceptIdx ->
-
-    match Array.tryFindIndex (fun (e:Slot) -> e.name = [|slotName|]) concepts.[conceptIdx].slots with
-    | Some idx ->
-       concepts.[conceptIdx].slots.[idx].heuristicNames <- Array.append concepts.[conceptIdx].slots.[idx].heuristicNames [|addedHeuristicName|];
-    | None   ->
-      warning 2 (String.Format ("couldn't find slot={0} of concept={1}", slotName, (convSymblToStrRec conceptName)))
-      ()
-  | None ->
-    warning 2 (String.Format ("couldn't find concept={0}", (convSymblToStrRec conceptName)))
-    ()
-
-
-
-
+    let heuristicNames = slotGetHeuristicNames concepts.[conceptIdx].slots [|slotName|] ""
+    let updatedHeuristicNames = Array.append heuristicNames [|addedHeuristicName|];
+    slotPutHeuristicNames concepts.[conceptIdx].slots [|slotName|] "" updatedHeuristicNames
 
 type AddConceptInfo = { name: Symbl; usefulness: float }
 
 // adds a concept with the fields
 let conceptsAdd (info:AddConceptInfo) (fields: (string * Variant) list) =
+
   let mutable slots = [||];
-  slots <- [|
-    new Slot([|"name"|], fun a -> makeSymbl info.name);
-    new Slot([|"usefulness"|], fun a -> makeFloat info.usefulness);
-    new Slot([|"creationAuthor"|], fun a -> makeSymbl (SymblName "Self")); // the system has created the concept
-  |];
+  
+  let appendSlot (name:String) (value: Variant) =
+    let createdSlotHistoryEntry = new SlotHistoryEntry(ssaEpoch, (fun a -> value), [||]);
+    let mutable createdSlot = new Slot([|name|]);
+    createdSlot.history <- [|createdSlotHistoryEntry|]
+    slots <- Array.append slots [|createdSlot|]
+    
+  appendSlot "name" (makeSymbl info.name)
+  appendSlot "usefulness" (makeFloat info.usefulness)
+  appendSlot "creationAuthor" (makeSymbl (SymblName "Self")) // the system has created the concept
   
   for fieldName, fieldValue in fields do
-    slots <- Array.append slots [|new Slot([|fieldName|], fun a -> fieldValue)|]
+    appendSlot fieldName fieldValue
 
   concepts <- Array.append concepts [|new Concept(slots)|];
+
+  debug 5 (String.Format ("created concept={0}", info.name))
 
 //////////////////////
 /// fill concepts with hardcoded concepts from [Lenat phd dissertation]
@@ -321,63 +334,36 @@ let fillLenatConcepts () =
   // TODO< rewrite to use conceptsAdd() for most other creations of concepts! >
   
   // see [Lenat phd dissertation page pdf 215]
-  slots <- [|
-    new Slot([|"name"|], fun a -> makeSymbl (SymblName "Atom-obj"));
-    new Slot([|"usefulness"|], fun a -> makeFloat 0.1);
-    new Slot([|strGen|], fun a -> makeSymbl (SymblName "Object"));
-  |];
-  concepts <- Array.append concepts [|new Concept(slots)|];
-
-  // see [Lenat phd dissertation page pdf 215]
-  slots <- [|
-    new Slot([|"name"|], fun a -> makeSymbl (SymblName "BooleanTruth-Value"));
-    new Slot([|"usefulness"|], fun a -> makeFloat 0.1);
-    new Slot([|strGen|], fun a -> makeSymbl (SymblName "Atom-obj"));
-  |];
-  concepts <- Array.append concepts [|new Concept(slots)|];
-
-  // see [Lenat phd dissertation page pdf 113]
-  slots <- [|
-    new Slot([|"name"|], fun a -> makeSymbl (SymblName "Lists"));
-    new Slot([|"usefulness"|], fun a -> makeFloat 0.5);
-    new Slot([|strGen|], fun a -> makeSymbl (SymblName "Ordered"));
-  |];
-  concepts <- Array.append concepts [|new Concept(slots)|];
-
-  // see [Lenat phd dissertation page pdf 113]
-  slots <- [|
-    new Slot([|"name"|], fun a -> makeSymbl (SymblName "Sets"));
-    new Slot([|"usefulness"|], fun a -> makeFloat 0.5);
-    new Slot([|strGen|], fun a -> makeSymbl (SymblName "Unordered"));
-  |];
-  concepts <- Array.append concepts [|new Concept(slots)|];
+  conceptsAdd {name=SymblName "Atom-obj"; usefulness=0.1} [
+    (strGen, makeSymbl (SymblName "Object"))]
   
+  // see [Lenat phd dissertation page pdf 215]
+  conceptsAdd {name=SymblName "BooleanTruth-Value"; usefulness=0.1} [
+    (strGen, makeSymbl (SymblName "Atom-obj"))]
 
-  slots <- [|
-    new Slot([|"name"|], fun a -> makeSymbl (SymblName "Union"));
-    new Slot([|"usefulness"|], fun a -> makeFloat 0.1); // 0.1 see [Lenat phd dissertation page pdf 196]
-    
-    new Slot([|"isa"|], fun a -> makeArr [| makeSymbl (SymblName "Operation") |] );
+  // see [Lenat phd dissertation page pdf 113]
+  conceptsAdd {name=SymblName "Lists";usefulness=0.5} [
+    (strGen, makeSymbl (SymblName "Ordered"))]
 
+  // see [Lenat phd dissertation page pdf 113]
+  conceptsAdd {name=SymblName "Sets";usefulness=0.5} [
+    (strGen, makeSymbl (SymblName "Unordered"))]
+  
+  conceptsAdd {name=SymblName "Union";usefulness=0.1} [ // 0.1 see [Lenat phd dissertation page pdf 196]
+    ("isa",  makeArr [| makeSymbl (SymblName "Operation") |])
     // TODO< rewrite domain and range to use of Syml* structure family >
-    new Slot([|"domain-range"|], fun a -> makeArr[| makeArr [|makeString "Structures";makeString "Structures";makeString "-->";makeString "Structures"|] |] );
-  |];
-  concepts <- Array.append concepts [|new Concept(slots)|];
+    ("domain-range", makeArr[| makeArr [|makeString "Structures";makeString "Structures";makeString "-->";makeString "Structures"|] |] );
+    ]
   
   // see [Lenat phd dissertation page pdf 198]
-  slots <- [|
-    new Slot([|"name"|], fun a -> makeSymbl (SymblName "Set-Union"));
-    new Slot([|"usefulness"|], fun a -> makeFloat 0.1); // 0.1 see [Lenat phd dissertation page pdf 198]
-    new Slot([|strGen|], fun a ->  makeSymbl (SymblName "Union"));
-
-    new Slot([|"domain-range"|], fun a -> makeArr [|
+  conceptsAdd {name=SymblName "Set-Union";usefulness=0.1} [ // 0.1 see [Lenat phd dissertation page pdf 198]
+    (strGen, makeSymbl (SymblName "Union"));
+    ("domain-range", makeArr [|
       makeSymbl (SymblBinary (SymblProd [SymblName "Sets"; SymblName "Sets"], "-->", SymblName "Sets"))
       |]);
-    new Slot([|"algorithms"|], fun a -> makeArr [| (*makeFn algorithm_union  --- is commented because we remove this function for this algorithm! *) |] );
-  |];
-  concepts <- Array.append concepts [|new Concept(slots)|];
+    ("algorithms", makeArr [| (*makeFn algorithm_union  --- is commented because we remove this function for this algorithm! *) |] );
+    ]
   
-
   ////////////////
   /// "Compose" concept
   
@@ -469,33 +455,26 @@ let fillLenatConcepts () =
 
 let fillCustomConcepts () =
   let mutable slots: Slot[] = [||];
+
+  conceptsAdd {name=SymblName "Algorithm"; usefulness=0.999} [
+    ("usefulnessIsFrozen", makeLong 1L)] // freeze usefulness 
   
   // concept from which all heuristics specialize
-  slots <- [|
-    new Slot([|"name"|], fun a -> makeSymbl (SymblName "Heuristic"));
-    new Slot([|"usefulness"|], fun a -> makeFloat 0.999);
-    new Slot([|"usefulnessIsFrozen"|], fun a -> makeLong 1L); // freeze usefulness 
-    //new Slot([|strGen|], fun a -> makeString "Any");
-  |];
-  concepts <- Array.append concepts [|new Concept(slots)|];
+  conceptsAdd {name=SymblName "Heuristic"; usefulness=0.999} [
+    ("usefulnessIsFrozen", makeLong 1L); // freeze usefulness 
+    (strGen, makeString "Algorithm")]
+  
   
   // use to refer and store everything related to the AI itself
   // TODO SCIFI< is a good place to add basic emotion parameters >
-  slots <- [|
-    new Slot([|"name"|], fun a -> makeSymbl (SymblName "Self"));
-    new Slot([|"usefulness"|], fun a -> makeFloat 0.999);
-    new Slot([|"usefulnessIsFrozen"|], fun a -> makeLong 1L); // freeze usefulness 
+  conceptsAdd {name=SymblName "Self"; usefulness=0.999} [
+    ("usefulnessIsFrozen", makeLong 1L)] // freeze usefulness 
     //new Slot([|strGen|], fun a -> makeString "Any");
-  |];
-  concepts <- Array.append concepts [|new Concept(slots)|];
   
-  slots <- [|
-    new Slot([|"name"|], fun a -> makeSymbl (SymblName "Integer"));
-    new Slot([|"usefulness"|], fun a -> makeFloat 0.999);
-    new Slot([|"usefulnessIsFrozen"|], fun a -> makeLong 1L); // freeze usefulness 
-    new Slot([|strGen|], fun a -> makeSymbl (SymblName "Atom-obj"));
-  |];
-  concepts <- Array.append concepts [|new Concept(slots)|];
+  conceptsAdd {name=SymblName "Integer";usefulness= 0.999} [
+    ("usefulnessIsFrozen", makeLong 1L); // freeze usefulness 
+    (strGen, makeSymbl (SymblName "Atom-obj"));]
+
 
 // we need a way to store the (typed) bodies used by the heuristics
 let heuristicActions :Dictionary<string, HeuristicInvocationCtx->unit> = new Dictionary<string, HeuristicInvocationCtx->unit>()
@@ -537,15 +516,11 @@ let fillLenatHeuristics () =
     
     
     // create and add heuristic concept
-    let slots =
-      [|
-      new Slot([|"name"|], fun a -> makeSymbl heuristicName);
-      new Slot([|"usefulness"|], fun a -> (makeFloat 0.75));
-      new Slot([|"heuristicActions"|], fun a -> (makeArr [|makeString "heuristicSuggestTasksAction"|])); // IMPL< register action for heuristic >
-      new Slot([|strGen|], fun a -> makeSymbl (SymblName "Heuristic")); // "is a" relationship
-      new Slot([|"isa"|], fun a -> makeArr [| makeSymbl (SymblName "Heuristic")|]);
-      |];
-    concepts <- Array.append concepts [|new Concept(slots)|];
+    conceptsAdd {name=heuristicName;usefulness= 0.75} [
+      ("heuristicActions", (makeArr [|makeString "heuristicSuggestTasksAction"|])); // IMPL< register action for heuristic >
+      (strGen, makeSymbl (SymblName "Heuristic")); // "is a" relationship
+      ("isa", makeArr [| makeSymbl (SymblName "Heuristic")|]);
+      ]
     
     
     // add heuristic to "Any-concept" concept
@@ -556,7 +531,7 @@ let fillLenatHeuristics () =
     | Some c ->
       
       updateConceptSlot nameOfConcept [|"suggest"|] (makeString ""); // IMPL< ensure the slot exists >    
-      conceptAppendHeuristicName nameOfConcept "suggest" heuristicName
+      conceptAppendHeuristicName nameOfConcept "suggest" heuristicName |> ignore
       
     | None -> 
       printfn "[w ] couldn't find concept=%s" (convSymblToStrRec nameOfConcept);
@@ -632,15 +607,10 @@ let fillLenatHeuristics () =
     
     
     // create and add heuristic concept
-    let slots =
-      [|
-      new Slot([|"name"|], fun a -> (makeSymbl heuristicName));
-      new Slot([|"usefulness"|], fun a -> (makeFloat 0.75));
-      new Slot([|"heuristicActions"|], fun a -> (makeArr [|makeString "heuristic185SuggestAction"|])); // IMPL< register action for heuristic >
-      new Slot([|strGen|], fun a ->  makeSymbl (SymblName "Heuristic")); // "is a" relationship
-      new Slot([|"isa"|], fun a -> makeArr [| makeSymbl (SymblName "Heuristic")|]);
-      |];
-    concepts <- Array.append concepts [|new Concept(slots)|];
+    conceptsAdd {name=heuristicName;usefulness= 0.75} [
+      ("heuristicActions", (makeArr [|makeString "heuristic185SuggestAction"|])); // IMPL< register action for heuristic >
+      (strGen, makeSymbl (SymblName "Heuristic")); // "is a" relationship
+      ("isa", makeArr [| makeSymbl (SymblName "Heuristic")|])]
     
     
     // add heuristic to concept
@@ -649,7 +619,7 @@ let fillLenatHeuristics () =
     | Some c ->
       
       updateConceptSlot conceptNameOfAddedHeuristic [|"suggest"|] (makeString ""); // IMPL< ensure the slot exists >    
-      conceptAppendHeuristicName conceptNameOfAddedHeuristic "suggest" heuristicName
+      conceptAppendHeuristicName conceptNameOfAddedHeuristic "suggest" heuristicName |> ignore
       
     | None -> 
       warning 0 (String.Format ("couldn't find concept={0}", convSymblToStrRec conceptNameOfAddedHeuristic))
@@ -730,8 +700,8 @@ let tryApplyTaskToConcept (task:Task) (hostConcept:Concept) =
   // IMPL< we need to iterate over all "facets"(slots) to find the heuristics (and apply them)
   for iItem in hostConcept.slots do
     debug 7 (String.Format("   has item name={0}", iItem.name.[0]));
-
-    let iHeuristicConceptNames = iItem.heuristicNames; // IMPL< we need to retrieve the names of the heuristics >
+    
+    let iHeuristicConceptNames = slotGetHeuristicNames hostConcept.slots iItem.name ""; // IMPL< we need to retrieve the names of the heuristics >
     
     // fetch heuristics as described in [Lenat phd dissertation] [AM CASE pdf page 5]
     for iHeuristicConceptName in iHeuristicConceptNames do
