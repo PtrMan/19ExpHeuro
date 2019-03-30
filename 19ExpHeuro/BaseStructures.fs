@@ -1,6 +1,7 @@
 ﻿module BaseStructures
 
 open System
+open System.Collections.Generic
 
 // clamp value to range
 let clamp min_ max_ value = max min_ value |> min max_
@@ -47,6 +48,7 @@ type Variant =
 | VariantArr of Variant[]
 | VariantFn of (Variant[]->Variant)
 | VariantSymbl of Symbl // used to communicate with Symbols
+| VariantDict of Dictionary<string, Variant>
 
 let isVariantSymbl (v:Variant): bool =
   match v with
@@ -82,6 +84,10 @@ let checkVariantSameType (a:Variant) (b:Variant): bool =
   | VariantSymbl _ ->
     match b with
     | VariantSymbl _ -> true
+    | _ -> false
+  | VariantDict _ ->
+    match b with
+    | VariantDict _ -> true
     | _ -> false
 
 let rec checkVariantEq (a:Variant) (b:Variant) =
@@ -121,6 +127,10 @@ let rec checkVariantEq (a:Variant) (b:Variant) =
         else
           false
       | _ -> false
+    
+    // TODO< check dict for equality
+ 
+ // TODO< remove functions and rewrite code to build variants directly >
 
 let makeSymbl (value: Symbl) =
   VariantSymbl value
