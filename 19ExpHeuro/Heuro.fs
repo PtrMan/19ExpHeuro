@@ -462,7 +462,7 @@ let fillCustomConcepts () =
   // concept from which all heuristics specialize
   conceptsAdd {name=SymblName "Heuristic"; usefulness=0.999} [
     ("usefulnessIsFrozen", makeLong 1L); // freeze usefulness 
-    (strGen, makeString "Algorithm")]
+    (strGen, makeSymbl (SymblName "Algorithm"))]
   
   
   // use to refer and store everything related to the AI itself
@@ -518,8 +518,8 @@ let fillLenatHeuristics () =
     // create and add heuristic concept
     conceptsAdd {name=heuristicName;usefulness= 0.75} [
       ("heuristicActions", (makeArr [|makeString "heuristicSuggestTasksAction"|])); // IMPL< register action for heuristic >
-      (strGen, makeSymbl (SymblName "Heuristic")); // "is a" relationship
-      ("isa", makeArr [| makeSymbl (SymblName "Heuristic")|]);
+      (strGen, makeSymbl (SymblName "Heuristic"));
+      ("isa", makeArr [| makeSymbl (SymblName "Heuristic")|]); // "is a" relationship
       ]
     
     
