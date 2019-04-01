@@ -19,7 +19,8 @@ open System
 open System.Collections.Generic
 
 open BaseStructures
-
+open System
+open HInterpreter1
 
 
 
@@ -629,6 +630,16 @@ let fillLenatHeuristics () =
 
   ()
 
+let fillMetaHeuristics () =
+  // MH stands for meta heuristic
+
+  // just a trivial heuristic which manipulates a chosen heuristic
+  conceptsAdd {name=SymblName "MHMyTest0";usefulness= 0.75} [
+    ("h1Actions", (makeArr [|
+      makeArr[|makeString "remove"; makeString "0"; makeString "action"|]|]));
+    (strGen, makeSymbl (SymblName "Heuristic"));
+    ("isa", makeArr [| makeSymbl (SymblName "Heuristic")|])] // "is a" relationship
+
 let mutable taskIdCounter = 0L;
 
 let fillDefaultTasks () =
@@ -694,6 +705,8 @@ let _checkVariantArray (slotValue:Variant) (checkPredicate:Variant->bool): bool 
 
 
 // tries to apply the task to a (host) concept
+// 
+// is part of the CONTROL mechanism
 let tryApplyTaskToConcept (task:Task) (hostConcept:Concept) =  
   let heuristicInvocationCtx = new HeuristicInvocationCtx(task, hostConcept);
   
@@ -717,6 +730,7 @@ let tryApplyTaskToConcept (task:Task) (hostConcept:Concept) =
 
       match heuristicMaybe with
       | Some heuristic -> 
+
         // iterate over applied concepts
         // TODO< keep track of resource quota's >
         for iAppliedConcept in concepts do
@@ -726,6 +740,39 @@ let tryApplyTaskToConcept (task:Task) (hostConcept:Concept) =
           if heuristicFires then
             printfn "[d5] heuristicConceptName=%s heuristic=%s FIRING!" (convSymblToStrRec iHeuristicConceptName) (convSymblToStrRec heuristicName);
             
+
+            // TODO TODO TODO TODO< put into function fireHeuristic() >
+
+
+            match heuristicConceptOpt with
+            | Some heuristicConcept ->
+              if slotHas heuristicConcept.slots [|"h1Actions"|] then // we need to fiure out if we have to interpret the "then" part of the heuristic with the HInterpreter1
+                // interpret heurstic
+                let heuristicCodeVariant = conceptRetSlotOrNull heuristicConcept [|"h1Actions"|]
+                match heuristicCodeVariant with
+                | VariantArr actionVariantsArr ->
+                  
+                  // we need to iterative over each instruction and execute it
+                  for iActionVariant in actionVariantsArr do
+                    let actionReprOpt: string list option = convVariantArrToStringListOpt iActionVariant
+                    
+                    match actionReprOpt with
+                    | Some actionRepr ->
+                      heuristicAlgo1Interpreter {manipulatedHeuristic=iAppliedConcept; repr=actionRepr}
+                    | None ->
+                      warning 5 (String.Format ("heuristic exec: heuristic-concept={0}'s h1Actions couldn't get translated to a stringArr!", (conceptRetName heuristicConcept)))
+                      ()
+                    
+                    ()
+                  ()
+                | _ ->
+                  warning 5 (String.Format ("heuristic exec: heuristic-concept={0}'s h1Actions wasn't a VariantArr!", (retConceptName heuristicConcept)))
+                  ()
+              else
+                () // TODO< process with heuristicActions as the old code is doing it >
+            | None ->
+              ()
+
             let heuristicActionsNamesOpt: string[] option =
               match heuristicConceptOpt with
               | Some heuristicConcept ->

@@ -198,6 +198,25 @@ let convStrVariantArrToStrArr (v:Variant): string[] =
     arr
   | _ -> [||]
 
+// converts a Variant array of strings to a list of strings - result is None if it failed
+let convVariantArrToStringListOpt (v:Variant): string list option =
+  match v with
+  | VariantArr variantArr ->
+    let mutable res = []
+    let mutable isValid = true
+    for iv in variantArr do
+      match iv with
+      | VariantString str ->
+        res <- List.append res [str]
+      | _ ->
+        isValid <- false
+     
+    if isValid then
+      Some res
+    else
+      None
+  | _ ->
+    None
 
 
 
@@ -456,3 +475,6 @@ let conceptIsOperationWithSameDomainAndRange (concept:Concept) =
     idx <- idx + 1
   
   res
+
+// global random number generator
+let mutable rng: Random = new Random(43)

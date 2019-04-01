@@ -20,9 +20,15 @@ let removeAt (idx:int) (arr:Variant[]): Variant[] =
   let after = Array.sub arr (idx+1) (Array.length arr - idx - 1)
   Array.append before after
 
+// helper structure for passing into heuristicAlgo1Interpreter
+type HeuristicAlgo1Info = {
+  manipulatedHeuristic: Concept;
+  repr:string list
+}
+
 // /param manipulatedHeuristic is the concept of the manipulated heuristic
 // /param repr representation of the heuristic which is interpreted
-let heuristicAlgo1Interpreter (manipulatedHeuristic: Concept) (repr:string list) =
+let heuristicAlgo1Interpreter (info:HeuristicAlgo1Info) =
   // remove something
   let doRemove (repr:string list) =
     // compute index of removed item
@@ -53,10 +59,10 @@ let heuristicAlgo1Interpreter (manipulatedHeuristic: Concept) (repr:string list)
       printfn "[d9] remove action at idx=%i" removedIdx
 
 
-      let mutable heuristicActionsArr: Variant[] = conceptRetSlotOrNull manipulatedHeuristic [|"heuristicActions"|] |> retVariantArrOrDefault
+      let mutable heuristicActionsArr: Variant[] = conceptRetSlotOrNull info.manipulatedHeuristic [|"heuristicActions"|] |> retVariantArrOrDefault
       if removedIdx < Array.length heuristicActionsArr then
         heuristicActionsArr <- removeAt removedIdx heuristicActionsArr
-        slotPut manipulatedHeuristic.slots [|"heuristicActions"|] "" (makeArr heuristicActionsArr) |> ignore
+        slotPut info.manipulatedHeuristic.slots [|"heuristicActions"|] "" (makeArr heuristicActionsArr) |> ignore
 
         printfn "[d9]  removed!"
 
@@ -65,12 +71,12 @@ let heuristicAlgo1Interpreter (manipulatedHeuristic: Concept) (repr:string list)
     
 
   
-  if List.length repr > 0 then
+  if List.length info.repr > 0 then
 
-    match repr.Head with
+    match info.repr.Head with
     | "remove" -> // remove something
-      doRemove repr.Tail
+      doRemove info.repr.Tail
     | _ ->
-      printfn "[w9] heuristicAlgo1Interpreter():  %s is a unknown command" repr.Head
+      printfn "[w9] heuristicAlgo1Interpreter():  %s is a unknown command" info.repr.Head
   else
     printfn "[w9] heuristicAlgo1Interpreter(): repr is empty!"
