@@ -6,7 +6,7 @@ open Dev
 
 [<EntryPoint>]
 let main argv = 
-  devTest ()
+  devTestInterpretedHeuristic ()
 
   printfn "%A" argv
   0 // return an integer exit code
