@@ -725,11 +725,7 @@ let tryApplyTaskToConcept (task:Task) =
       
       let heuristicConceptOpt: Concept option = (retConceptByName iHeuristicConceptName)
 
-
-
-
-
-
+      
 
 
       // TODO TODO TODO TODO< put into function fireHeuristic() >
@@ -798,113 +794,7 @@ let tryApplyTaskToConcept (task:Task) =
       | None ->
         ()
               
-
-
-
-
-
-
-
-
-      // OLD CODE OLD CODE
-      // OLD CODE OLD CODE
-      // OLD CODE OLD CODE
-      // OLD CODE OLD CODE
-      // OLD CODE OLD CODE
-      // OLD CODE OLD CODE
-      // OLD CODE OLD CODE
-      (*
-
-      let heuristicName = iHeuristicConceptName
-      
-      let heuristicMaybe: Heuristic2 option = (retHeuristicByName heuristicName)
-
-      match heuristicMaybe with
-      | Some heuristic -> 
-        
-        // TODO< keep track of resource quota's >
-        
-        let invocationCtx = new HeuristicInvocationCtx(task, hostConcept)
-        let heuristicFires = (checkLeftSide heuristic invocationCtx)
-
-        if heuristicFires then
-          printfn "[d5] heuristicConceptName=%s heuristic=%s FIRING!" (convSymblToStrRec iHeuristicConceptName) (convSymblToStrRec heuristicName);
-            
-
-          // TODO TODO TODO TODO< put into function fireHeuristic() >
-
-
-          match heuristicConceptOpt with
-          | Some heuristicConcept ->
-            if slotHas heuristicConcept.slots [|"h1Actions"|] then // we need to fiure out if we have to interpret the "then" part of the heuristic with the HInterpreter1
-              // interpret heurstic
-              let heuristicCodeVariant = conceptRetSlotOrNull heuristicConcept [|"h1Actions"|]
-              match heuristicCodeVariant with
-              | VariantArr actionVariantsArr ->
-                  
-                // we need to iterative over each instruction and execute it
-                for iActionVariant in actionVariantsArr do
-                  let actionReprOpt: string list option = convVariantArrToStringListOpt iActionVariant
-                    
-                  match actionReprOpt with
-                  | Some actionRepr ->
-                    heuristicAlgo1Interpreter {manipulatedHeuristic=hostConcept; repr=actionRepr}
-                  | None ->
-                    warning 5 (String.Format ("heuristic exec: heuristic-concept={0}'s h1Actions couldn't get translated to a stringArr!", (retConceptName heuristicConcept)))
-                    ()
-                    
-                  ()
-                ()
-              | _ ->
-                warning 5 (String.Format ("heuristic exec: heuristic-concept={0}'s h1Actions wasn't a VariantArr!", (retConceptName heuristicConcept)))
-                ()
-            else
-              // IMPL< process with heuristicActions >
-
-
-              let heuristicActionsNamesOpt: string[] option =
-                match heuristicConceptOpt with
-                | Some heuristicConcept ->
-                  Some (conceptRetSlotOrNull heuristicConcept [|"heuristicActions"|] |> convStrVariantArrToStrArr);
-                | None ->
-                  None
-
-              match heuristicActionsNamesOpt with
-              | Some heuristicActionsNames ->
-                printfn "[d5] found heuristicActions of heuristic name=%s" (convSymblToStrRec heuristicName);
-
-                // execute body of heuristic
-                for iHeuristicActionName in heuristicActionsNames do
-                  let foundHeuristicAction, heuristicAction = heuristicActions.TryGetValue iHeuristicActionName;
-
-                  if foundHeuristicAction then
-                      
-                    printfn "[d6]   invoke heuristicAction name=%s for concept=%s" iHeuristicActionName (retConceptName hostConcept |> convSymblToStrRec);
-
-                    (heuristicAction invocationCtx);
-                  else
-                    printfn "[w6]   could not find heuristic action name=%s" iHeuristicActionName;
-
-              | None ->
-                printfn "[w ] couldn't retrieve heuristicActions of heuristic name=%s" (convSymblToStrRec heuristicName);
-
-
-
-              () 
-          | None ->
-            ()
               
-        
-
-      | None ->
-        printfn "[w ] heuristicConcept=%s pointed at heuristic=%s which was not found!" (convSymblToStrRec iHeuristicConceptName) (convSymblToStrRec heuristicName);
-
-      
-      ()
-    *)
-
-
-
   debug 0 (String.Format("work on concept={0} facet={1} for search for matching heuristics", task.manipulatedConceptName, task.facetName));
 
   let hostConceptOpt = retConceptByName task.manipulatedConceptName
