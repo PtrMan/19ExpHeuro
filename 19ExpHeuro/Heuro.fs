@@ -481,6 +481,41 @@ let fillCustomConcepts () =
     (strGen, makeSymbl (SymblName "Atom-obj"));]
 
 
+
+
+
+// apply* as described in [III pdf page 36]
+// /param algorithm is the variant which contains a array with algorithms which will be applied to the argument
+// /param arguments are the actual arguments
+let applyStar (algorithms:Variant) (arguments:Variant[]): Variant =
+  
+  match algorithms with
+  | VariantArr arr ->
+    // IMPL< pick algorithm
+    let mutable algorithmIdx = -1
+
+    // IMPL< we choose only the first algorithm
+    // TODO< pick a algorithm which corresponds to a invicationInfo - like the fastest etc >
+    algorithmIdx <- 0
+    
+    
+    let chosenAlgorithm = arr.[algorithmIdx]
+    
+    // call algorithm
+    match chosenAlgorithm with
+    | VariantFn fn ->
+      (fn arguments)
+    | _ ->
+      warning 1 "apply* must be applied to a callable function!"
+      VariantNull
+    
+  | _ ->
+    warning 1 "apply* must be applied to an array of algorithms!"
+    VariantNull
+
+
+
+
 // we need a way to store the (typed) bodies used by the heuristics
 let heuristicActions :Dictionary<string, HeuristicInvocationCtx->unit> = new Dictionary<string, HeuristicInvocationCtx->unit>()
 
@@ -546,9 +581,85 @@ let fillLenatHeuristics () =
 
 
 
+  
 
 
+  // H174
+  let fillHeuristic174 () =
+    // 174
+    // To fill in algorithm for operation F, where F is a composition  G o H
+    // one algorithm is to apply H and then G
+    //
+    // [Lenat phd dissertation pdf page 270]
+    let heuristicLeftSide (invocationCtx:HeuristicInvocationCtx) =
+      true
+    
+    let heuristicAction (invocationCtx:HeuristicInvocationCtx) =
+      let conceptName = retConceptName invocationCtx.concept
 
+      match conceptName with
+      | SymblFn ("o", [g; h]) ->
+        let conceptG = retConceptByName g
+
+
+        let chosenAlgorithmOfG = 
+          match conceptG with
+          | Some conceptG2 ->
+            match conceptRetSlotOrNull conceptG2 [|"algorithm"|] with
+            | VariantArr arr -> arr.[0]
+            | _ -> VariantNull
+          | None -> VariantNull
+
+        let conceptH = retConceptByName h
+        let chosenAlgorithmOfH = match conceptH with
+          | Some conceptH2 ->
+            match conceptRetSlotOrNull conceptH2 [|"algorithm"|] with
+            | VariantArr arr -> arr.[0]
+            | _ -> VariantNull
+          | None -> VariantNull
+
+        // function which applies algorithm of H and the applies algorithm of G
+        let fnApplyChained (arguments:Variant[]): Variant =
+          let appliedH = applyStar chosenAlgorithmOfH arguments
+          let appliedG = applyStar chosenAlgorithmOfG [|appliedH|]
+          appliedG
+        
+        // TODO< append function somehow >
+        updateConceptSlot conceptName [|"algorithm"|] (VariantArr [|VariantFn fnApplyChained|])
+
+        ()
+
+      | _ ->
+        warning 5 (String.Format ("Heuristic174 was applied to conceptName={0} which is not a valid composition!", convSymblToStrRec conceptName))
+
+        ()
+  
+  
+    heuristicActions.Add("heuristic174fillin", heuristicAction); // IMPL< register action >
+
+    let heuristicName = SymblName ("H_"+"174");
+
+    heuristics2 <- Array.append heuristics2
+      [|new Heuristic2(heuristicName, [|heuristicLeftSide|])|]; // IMPL< register >
+    
+    
+    // create and add heuristic concept
+    conceptsAdd {name=heuristicName;usefulness= 0.75} [
+      ("heuristicActions", (makeArr [|makeString "heuristic174fillin"|])); // IMPL< register action for heuristic >
+      (strGen, makeSymbl (SymblName "Heuristic")); // "is a" relationship
+      ("isa", makeArr [| makeSymbl (SymblName "Heuristic")|])]
+    
+    
+    // add heuristic to concept
+    let conceptNameOfAddedHeuristic = SymblName "Compose";
+    match (retConceptByName conceptNameOfAddedHeuristic) with
+    | Some c ->
+      
+      updateConceptSlot conceptNameOfAddedHeuristic [|"fillin"|] (makeString ""); // IMPL< ensure the slot exists >    
+      conceptAppendHeuristicName conceptNameOfAddedHeuristic "fillin" heuristicName |> ignore
+      
+    | None -> 
+      warning 0 (String.Format ("couldn't find concept={0}", convSymblToStrRec conceptNameOfAddedHeuristic))
 
 
 
@@ -629,8 +740,9 @@ let fillLenatHeuristics () =
     | None -> 
       warning 0 (String.Format ("couldn't find concept={0}", convSymblToStrRec conceptNameOfAddedHeuristic))
 
-
+  (fillHeuristic174 ())
   (fillHeuristic185 ())
+
 
   ()
 
@@ -987,3 +1099,7 @@ let fuse (isSet:bool) (a:Variant[]) (b:Variant[]): Variant[] =
       res <- Array.append res [|iB|];
   
   res
+
+
+
+  
