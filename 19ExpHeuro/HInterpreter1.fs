@@ -31,35 +31,36 @@ type HeuristicAlgo1Info = {
 let heuristicAlgo1Interpreter (info:HeuristicAlgo1Info) =
   // remove something
   let doRemove (repr:string list) =
-    // compute index of removed item
-    let removedIdx = match repr.[0] with
-    | "any" -> // select any index by random
-      -1 // TODO < pull number from global rng >
-    | "0" -> 0
-    | "1" -> 1
-    | "2" -> 2
-    | "3" -> 3
-    | "4" -> 4
-    | "5" -> 5
-    // TODO< generalize by trying to covert it to a integer >
+    // returns the numeric index of the code
+    let retIdx (code:string) (numberOfElement:int): int =
+      // compute index of removed item
+      match code with
+      | "any" -> // select any index by random
+        rng.Next(numberOfElement)
+      | str -> int str
 
-    | _ ->
-      let msg = "[w9] heuristicAlgo1Interpreter().remove(): unknown index name='" + repr.[0] + "'!"
-      printfn "%s" msg
-      0
+      //IMPL< commented because not necessary and old code >
+      //| _ ->
+      //  let msg = "[w9] heuristicAlgo1Interpreter().remove(): unknown index name='" + repr.[0] + "'!"
+      //  printfn "%s" msg
+      //  0
     
     let cmdType = repr.[1]
 
     match cmdType with
     | "precondition" -> // remove precondition at idx
+      let removedIdx = retIdx repr.[0] 0 // TODO< compute number of elements >
       printfn "[d9] remove precondition at idx=%i" removedIdx
 
       printfn "[d ] not implemented!" // TODO TODO TODO TODO< implement >
     | "action" -> // remove action at idx
-      printfn "[d9] remove action at idx=%i" removedIdx
-
-
       let mutable heuristicActionsArr: Variant[] = conceptRetSlotOrNull info.manipulatedHeuristic [|"heuristicActions"|] |> retVariantArrOrDefault
+      
+      let numberOfElements = Array.length heuristicActionsArr
+      let removedIdx = retIdx repr.[0] numberOfElements
+
+      printfn "[d9] remove action at idx=%i" removedIdx
+      
       if removedIdx < Array.length heuristicActionsArr then
         heuristicActionsArr <- removeAt removedIdx heuristicActionsArr
         slotPut info.manipulatedHeuristic.slots [|"heuristicActions"|] "" (makeArr heuristicActionsArr) |> ignore
