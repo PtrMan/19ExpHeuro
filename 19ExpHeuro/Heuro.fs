@@ -592,6 +592,8 @@ let fillLenatHeuristics () =
     //
     // [Lenat phd dissertation pdf page 270]
     let heuristicLeftSide (invocationCtx:HeuristicInvocationCtx) =
+      // TODO< check if it is an Operation >
+
       true
     
     let heuristicAction (invocationCtx:HeuristicInvocationCtx) =
